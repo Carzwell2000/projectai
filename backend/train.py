@@ -1,26 +1,3 @@
-# ============================================================
-# PATIENT DISEASE ASSESSMENT SYSTEM
-# ============================================================
-#
-# Dataset:
-# backend/dataset_restructured_clean.csv
-#
-# Dataset columns:
-#   disease
-#   symptoms
-#   temperature
-#   recommendation
-#
-# Symptoms are stored in ONE column and separated by commas.
-#
-# Example dataset row:
-#
-# disease     | symptoms                    | temperature | recommendation
-# -------------------------------------------------------------------------
-# Flu         | fever, cough, headache      | 38-40       | Rest and hydrate
-#
-# ============================================================
-
 
 import os
 import re

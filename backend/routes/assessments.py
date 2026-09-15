@@ -8,6 +8,7 @@ from main import (
     AssessmentRequest,
     AssessmentSyncRequest,
     LOCAL_DATABASE_PATH,
+    PATIENTS_DATABASE_PATH,
     ensure_local_schema,
     mark_local_assessment_synced,
     predict_assessment,
@@ -16,9 +17,11 @@ from main import (
     settings,
     sync_local_assessments,
     sync_local_patients,
+    ensure_patients_schema,
     psycopg,
     dict_row,
 )
+from rule_engine import infer_triage
 
 router = APIRouter(prefix="/api")
 
@@ -76,6 +79,12 @@ def sync_assessment_to_postgres(
 
 def process_assessment(request: AssessmentRequest) -> dict[str, Any]:
     prediction = predict_assessment(request.symptoms, request.temperature)
+    triage = infer_triage(
+        age=request.age,
+        temperature=request.temperature,
+        blood_pressure=request.bloodPressure,
+        symptoms=request.symptoms,
+    )
     prediction = {
         "disease": str(prediction.get("disease", "Insufficient evidence")),
         "confidence": float(prediction.get("confidence", 0)),
@@ -86,21 +95,28 @@ def process_assessment(request: AssessmentRequest) -> dict[str, Any]:
             }
             for item in prediction.get("predictions", [])
         ],
+        "recognizedSymptoms": [str(item) for item in prediction.get("recognizedSymptoms", [])],
         "recommendation": str(prediction.get("recommendation", "Review with a qualified healthcare professional.")),
         "modelVersion": str(prediction.get("modelVersion", "unknown")),
         "status": prediction.get("status", "prediction"),
+        "triage": triage.as_dict(),
     }
     created_at = request.createdAt or datetime.now(timezone.utc)
+    # Return the model result without waiting for a remote database connection.
+    save_local_assessment(request, prediction, created_at)
     sync_status = "pending_sync"
-    if settings.database_url and psycopg is not None:
-        try:
-            save_postgres_assessment(request, prediction, created_at)
-            sync_status = "synced"
-        except Exception:
-            save_local_assessment(request, prediction, created_at)
-    else:
-        save_local_assessment(request, prediction, created_at)
     return {**request.model_dump(mode="json"), **prediction, "syncStatus": sync_status}
+
+
+@router.post("/triage")
+def triage_assessment(request: AssessmentRequest) -> dict[str, Any]:
+    """Return deterministic triage without persisting an encounter."""
+    return infer_triage(
+        age=request.age,
+        temperature=request.temperature,
+        blood_pressure=request.bloodPressure,
+        symptoms=request.symptoms,
+    ).as_dict()
 
 
 @router.post("/assessments", status_code=201)
@@ -137,33 +153,45 @@ def list_assessments(
     limit: int = Query(default=100, ge=1, le=500),
     sync_status: str | None = Query(default=None),
 ) -> dict[str, Any]:
-    try:
-        assessments = (
-            postgres_assessment_rows(limit, sync_status)
-            if settings.database_url and psycopg is not None
-            else local_assessment_rows(limit, sync_status)
-        )
-    except Exception:
-        assessments = local_assessment_rows(limit, sync_status)
+    # SQLite is the local source of truth. PostgreSQL sync is optional and
+    # should not hide records from the local FastAPI database.
+    assessments = local_assessment_rows(limit, sync_status)
     return {"count": len(assessments), "assessments": assessments}
 
 
 @router.get("/sync/status")
 def sync_status() -> dict[str, Any]:
     ensure_local_schema()
+    ensure_patients_schema()
     with sqlite3.connect(LOCAL_DATABASE_PATH) as connection:
         pending = connection.execute(
             "SELECT COUNT(*) FROM assessments WHERE sync_status = 'pending_sync'"
         ).fetchone()[0]
         total = connection.execute("SELECT COUNT(*) FROM assessments").fetchone()[0]
+        conflicts = connection.execute(
+            "SELECT COUNT(*) FROM assessments WHERE sync_status = 'conflict'"
+        ).fetchone()[0]
+        synced = connection.execute(
+            "SELECT COUNT(*) FROM assessments WHERE sync_status = 'synced'"
+        ).fetchone()[0]
+    with sqlite3.connect(PATIENTS_DATABASE_PATH) as connection:
         patient_pending = connection.execute(
             "SELECT COUNT(*) FROM patients WHERE sync_status = 'pending_sync'"
         ).fetchone()[0]
+        patient_conflicts = connection.execute(
+            "SELECT COUNT(*) FROM patients WHERE sync_status = 'conflict'"
+        ).fetchone()[0]
         patient_total = connection.execute("SELECT COUNT(*) FROM patients").fetchone()[0]
+        patient_synced = connection.execute(
+            "SELECT COUNT(*) FROM patients WHERE sync_status = 'synced'"
+        ).fetchone()[0]
     return {
         "total": total + patient_total,
         "pending": pending + patient_pending,
-        "synced": (total - pending) + (patient_total - patient_pending),
+        "pendingAssessments": pending,
+        "pendingPatients": patient_pending,
+        "synced": synced + patient_synced,
+        "conflicts": conflicts + patient_conflicts,
         "postgresConfigured": bool(settings.database_url and psycopg is not None),
     }
 
@@ -176,9 +204,13 @@ def run_sync() -> dict[str, int]:
 
     try:
         assessments = sync_local_assessments()
+    except Exception:
+        assessments = 0
+
+    try:
         patients = sync_local_patients()
     except Exception:
-        return {"assessments": 0, "patients": 0}
+        patients = 0
 
     return {
         "assessments": assessments,
@@ -188,16 +220,6 @@ def run_sync() -> dict[str, int]:
 
 @router.get("/assessments/{assessment_id}")
 def get_assessment(assessment_id: str) -> dict[str, Any]:
-    if settings.database_url and psycopg is not None:
-        try:
-            with psycopg.connect(settings.database_url, connect_timeout=15, row_factory=dict_row) as connection:
-                row = connection.execute(
-                    "SELECT * FROM assessments WHERE id = %s", (assessment_id,)
-                ).fetchone()
-            if row is not None:
-                return row_to_response(dict(row))
-        except Exception:
-            pass
     ensure_local_schema()
     with sqlite3.connect(LOCAL_DATABASE_PATH) as connection:
         connection.row_factory = sqlite3.Row

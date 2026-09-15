@@ -1,9 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { getModelCatalog } from "../services/api";
+import { saveModelCatalog } from "../services/offlineStorage";
 
 
 export default function RootLayout() {
+  useEffect(() => {
+    getModelCatalog().then(saveModelCatalog).catch(() => undefined);
+  }, []);
+
   return (
     <Tabs
       screenOptions={{
@@ -82,6 +88,13 @@ export default function RootLayout() {
       />
       <Tabs.Screen
         name="Results"
+        options={{
+          tabBarButton: () => null,
+          tabBarItemStyle: { display: "none" },
+        }}
+      />
+      <Tabs.Screen
+        name="RegisteredPatients"
         options={{
           tabBarButton: () => null,
           tabBarItemStyle: { display: "none" },

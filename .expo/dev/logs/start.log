@@ -1,0 +1,11 @@
+{"_e":"root:init","_t":1789222640967,"format":"v0-jsonl","version":"57.0.22"}
+{"_e":"env:mode","_t":1789222640985,"nodeEnv":"development","babelEnv":"development","mode":"development"}
+{"_e":"env:load","_t":1789222641005,"mode":"development","files":[],"env":{}}
+{"_e":"devserver:start","_t":1789222645866,"mode":"development","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../..\\..\\app","serverComponents":false,"serverActions":false,"serverRendering":false,"apiRoutes":false,"exporting":false}
+{"_e":"metro:config","_t":1789222653967,"serverRoot":"../..\\..","projectRoot":"../..\\..","exporting":false,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":false,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
+{"_e":"expo:dev-tools-plugin:load","_t":1789222660669,"plugins":[{"packageName":"expo-sqlite","bannerTitle":"expo-sqlite","cliBanner":false,"webpageEndpoint":"/_expo/plugins/expo-sqlite"}]}
+{"_e":"metro:server_log","_t":1789222675675,"level":"warn","data":["Failed to download the latest version of React Native DevTools. Using a fallback version instead. Connect to the internet or check your network settings."]}
+{"_e":"metro:instantiate","_t":1789222684663,"atlas":false,"workers":8,"host":"::","port":8081}
+{"_e":"env:mode","_t":1789222799957,"nodeEnv":"development","babelEnv":"development","mode":"development"}
+{"_e":"metro:client_log","_t":1789222870624,"level":"error","data":["Project is incompatible with this version of Expo Go\n\nThis project requires a newer version of Expo Go.\n\nHow to fix this error:\nDownload the latest version of Expo Go from the Play Store."]}
+{"_e":"metro:client_log","_t":1789222924935,"level":"error","data":["Project is incompatible with this version of Expo Go\n\nThis project requires a newer version of Expo Go.\n\nHow to fix this error:\nDownload the latest version of Expo Go from the Play Store."]}

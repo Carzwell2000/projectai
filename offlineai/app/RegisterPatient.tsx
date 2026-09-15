@@ -5,13 +5,15 @@ import tw from "twrnc";
 import Navbar from "../Components/Navbar";
 import RegisterPatientForm, { NewPatient } from "../Components/RegisterPatient";
 import { createPatient } from "../services/api";
+import { useSyncStore } from "../stores/syncStore";
 
 export default function RegisterPatientScreen() {
   const router = useRouter();
 
   const handleSave = async (patient: NewPatient) => {
     await createPatient(patient);
-    router.replace("/Patientrecords");
+    void useSyncStore.getState().refresh();
+    router.replace("/RegisteredPatients");
   };
 
   return (

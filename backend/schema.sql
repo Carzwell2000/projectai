@@ -19,6 +19,6 @@ CREATE TABLE IF NOT EXISTS patients (
   name TEXT NOT NULL,
   phone TEXT NOT NULL,
   date_of_birth TEXT NOT NULL,
-  condition TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL
+  created_at TIMESTAMPTZ NOT NULL,
+  sync_status TEXT NOT NULL DEFAULT 'synced'
 );

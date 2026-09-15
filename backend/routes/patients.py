@@ -3,7 +3,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from main import LOCAL_DATABASE_PATH, PatientRequest, create_patient, ensure_local_schema, sync_local_patients, settings, psycopg, dict_row
+from main import PATIENTS_DATABASE_PATH, PatientRequest, create_patient, ensure_patients_schema
 
 router = APIRouter(prefix="/api/patients", tags=["patients"])
 
@@ -15,28 +15,10 @@ def register_patient(request: PatientRequest) -> dict[str, Any]:
 
 @router.get("")
 def list_patients() -> dict[str, Any]:
-    if settings.database_url and psycopg is not None:
-        try:
-            with psycopg.connect(settings.database_url, connect_timeout=15, row_factory=dict_row) as connection:
-                rows = connection.execute("SELECT * FROM patients ORDER BY created_at DESC").fetchall()
-            patients = [
-                {
-                    "id": row["id"],
-                    "name": row["name"],
-                    "phone": row["phone"],
-                    "dateOfBirth": row["date_of_birth"],
-                    "condition": row["condition"],
-                    "createdAt": row["created_at"],
-                    "syncStatus": row["sync_status"],
-                }
-                for row in rows
-            ]
-            return {"count": len(patients), "patients": patients}
-        except Exception:
-            pass
-    ensure_local_schema()
-    sync_local_patients()
-    with sqlite3.connect(LOCAL_DATABASE_PATH) as connection:
+    # SQLite keeps the original patient details. PostgreSQL stores an anonymized
+    # copy for sync, so it must not be used to populate the patient picker.
+    ensure_patients_schema()
+    with sqlite3.connect(PATIENTS_DATABASE_PATH) as connection:
         connection.row_factory = sqlite3.Row
         rows = connection.execute("SELECT * FROM patients ORDER BY created_at DESC").fetchall()
     patients = [
@@ -45,7 +27,6 @@ def list_patients() -> dict[str, Any]:
             "name": row["name"],
             "phone": row["phone"],
             "dateOfBirth": row["date_of_birth"],
-            "condition": row["condition"],
             "createdAt": row["created_at"],
             "syncStatus": row["sync_status"],
         }

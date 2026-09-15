@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Modal, Pressable, Text, View } from "react-native";
 import tw from "twrnc";
-import { getSyncStatus, syncPendingAssessments } from "../services/api";
+import { useSyncStore } from "../stores/syncStore";
 
 type NavbarProps = {
 	variant?: "default" | "hero";
@@ -12,31 +12,20 @@ type NavbarProps = {
 export default function Navbar({ variant = "default" }: NavbarProps) {
 	const router = useRouter();
 	const [isMenuOpen, setIsMenuOpen] = useState(false);
-	const [pendingSyncCount, setPendingSyncCount] = useState(0);
+	const pendingSyncCount = useSyncStore((state) => state.pendingSyncCount);
+	const pendingAssessments = useSyncStore((state) => state.pendingAssessments);
+	const pendingPatients = useSyncStore((state) => state.pendingPatients);
+	const conflicts = useSyncStore((state) => state.conflicts);
+	const isSyncing = useSyncStore((state) => state.isSyncing);
+	const isBackendConfigured = useSyncStore((state) => state.isBackendConfigured);
+	const isOnline = useSyncStore((state) => state.isOnline);
+	const isConnected = isOnline && isBackendConfigured;
 
 	useEffect(() => {
-		let isActive = true;
-		const refreshSyncStatus = async () => {
-			try {
-				const status = await getSyncStatus();
-				if (status.postgresConfigured && status.pending > 0) {
-					await syncPendingAssessments();
-				}
-				if (isActive) setPendingSyncCount(status.pending);
-			} catch {
-				// Keep the last known count while FastAPI is unavailable.
-			}
-		};
-
-		void refreshSyncStatus();
-		const interval = setInterval(() => { void refreshSyncStatus(); }, 5000);
-		return () => {
-			isActive = false;
-			clearInterval(interval);
-		};
+		return useSyncStore.getState().startMonitoring();
 	}, []);
 
-	const openScreen = (screen: "/Analysis" | "/Settings") => {
+	const openScreen = (screen: "/Analysis" | "/Settings" | "/RegisteredPatients") => {
 		setIsMenuOpen(false);
 		router.push(screen);
 	};
@@ -46,9 +35,15 @@ export default function Navbar({ variant = "default" }: NavbarProps) {
 			{variant === "hero" ? (
 				<View style={tw`bg-sky-500 px-5 pb-8 pt-2`}>
 					<View style={tw`mb-6 flex-row items-center rounded-full bg-yellow-300 px-4 py-3`}>
-						<View style={tw`h-7 w-7 items-center justify-center rounded-full bg-sky-100`}><Ionicons name="cloud-offline-outline" size={17} color="#1671B8" /></View>
-						<Text style={tw`ml-2 flex-1 text-xs font-bold text-slate-800`}>Offline mode</Text>
-						<Text style={tw`text-xs font-medium text-slate-700`}>{pendingSyncCount} pending sync</Text>
+						<View style={tw`h-7 w-7 items-center justify-center rounded-full bg-sky-100`}><Ionicons name={isConnected ? "cloud-done-outline" : "cloud-offline-outline"} size={17} color="#1671B8" /></View>
+						<View style={tw`flex-1`} />
+						<Text style={tw`text-xs font-medium text-slate-700`}>
+							{isSyncing
+								? "Syncing records..."
+								: pendingSyncCount > 0
+								? `${pendingAssessments} assessments · ${pendingPatients} patients${conflicts ? ` · ${conflicts} conflicts` : ""}`
+								: "All records synced"}
+						</Text>
 					</View>
 					<View style={tw`flex-row items-start justify-between`}>
 						<View>
@@ -93,9 +88,10 @@ export default function Navbar({ variant = "default" }: NavbarProps) {
 					<Pressable style={tw`absolute right-5 top-16 w-72 rounded-2xl border border-slate-100 bg-white p-3 shadow-lg`} onPress={(event) => event.stopPropagation()}>
 						<View style={tw`border-b border-slate-100 px-3 pb-3`}>
 							<Text style={tw`text-lg font-bold text-slate-900`}>Menu</Text>
-							<Text style={tw`mt-1 text-xs text-slate-500`}>Tools and account settings</Text>
+							<Text style={tw`mt-1 text-xs text-slate-500`}></Text>
 						</View>
-						<MenuItem icon="analytics-outline" label="Analysis" onPress={() => openScreen("/Analysis")} />
+			
+						<MenuItem icon="person-outline" label="Registered patients" onPress={() => openScreen("/RegisteredPatients")} />
 						<MenuItem icon="settings-outline" label="Settings" onPress={() => openScreen("/Settings")} />
 						<MenuItem icon="close-outline" label="Close menu" onPress={() => setIsMenuOpen(false)} />
 					</Pressable>

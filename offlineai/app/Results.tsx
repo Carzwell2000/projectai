@@ -1,31 +1,27 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import tw from "twrnc";
 import Navbar from "../Components/Navbar";
-
-type ChatMessage = {
-  id: string;
-  role: "assistant" | "user";
-  text: string;
-};
+import { explainAssessment, type AssessmentExplanation, type TriageRecommendation } from "../services/api";
 
 export default function Results() {
   const router = useRouter();
-  const { name = "Patient", age = "", symptoms = "", temperature = "", bloodPressure = "", assessmentId = "", disease = "", confidence = "", recommendation = "", modelVersion = "", predictions = "[]", offline = "false", error = "" } = useLocalSearchParams<{
+  const { name = "Patient", age = "", symptoms = "", temperature = "", bloodPressure = "", disease = "", confidence = "", recommendation = "", status = "", predictions = "[]", recognizedSymptoms = "[]", triage = "", offline = "false", error = "" } = useLocalSearchParams<{
     name: string;
     age: string;
     symptoms: string;
     temperature: string;
     bloodPressure: string;
-    assessmentId: string;
     disease: string;
     confidence: string;
     recommendation: string;
-    modelVersion: string;
+    status: string;
     predictions: string;
+    recognizedSymptoms: string;
+    triage: string;
     offline: string;
     error: string;
   }>();
@@ -33,33 +29,36 @@ export default function Results() {
   const diseaseText = Array.isArray(disease) ? disease[0] : disease;
   const confidenceText = Array.isArray(confidence) ? confidence[0] : confidence;
   const recommendationText = Array.isArray(recommendation) ? recommendation[0] : recommendation;
-  const modelVersionText = Array.isArray(modelVersion) ? modelVersion[0] : modelVersion;
+  const statusText = Array.isArray(status) ? status[0] : status;
   const predictionText = Array.isArray(predictions) ? predictions[0] : predictions;
   const topPredictions = parsePredictions(predictionText);
-  const topMatch = topPredictions[0];
-  const [question, setQuestion] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      text: diseaseText
-        ? `I can explain this prediction for ${name}. What would you like to understand first?`
-        : "I can explain how predictions work, but this assessment does not have a model result yet. What would you like to know?",
-    },
-  ]);
+  const modelSymptoms = parseSymptoms(Array.isArray(recognizedSymptoms) ? recognizedSymptoms[0] : recognizedSymptoms);
+  const triageResult = parseTriage(Array.isArray(triage) ? triage[0] : triage);
+  const [explanation, setExplanation] = useState<AssessmentExplanation | null>(null);
+  const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
+  const [explanationError, setExplanationError] = useState(false);
 
-  const askQuestion = (value = question) => {
-    const trimmedQuestion = value.trim();
-    if (!trimmedQuestion) return;
+  useEffect(() => {
+    if (!diseaseText || offline === "true" || !symptomText || !temperature) return;
 
-    setMessages((currentMessages) => [
-      ...currentMessages,
-      { id: `${Date.now()}-question`, role: "user", text: trimmedQuestion },
-      { id: `${Date.now()}-answer`, role: "assistant", text: answerPredictionQuestion(trimmedQuestion, { diseaseText, confidenceText, symptomText, recommendationText, modelVersionText }) },
-    ]);
-    setQuestion("");
-  };
+    let isActive = true;
+    setIsLoadingExplanation(true);
+    setExplanationError(false);
+    explainAssessment({ symptoms: symptomText, temperature: Number(temperature), bloodPressure: bloodPressure as string })
+      .then((result) => {
+        if (isActive) setExplanation(result);
+      })
+      .catch(() => {
+        if (isActive) setExplanationError(true);
+      })
+      .finally(() => {
+        if (isActive) setIsLoadingExplanation(false);
+      });
 
+    return () => {
+      isActive = false;
+    };
+  }, [bloodPressure, diseaseText, offline, symptomText, temperature]);
   return (
     <SafeAreaView style={tw`flex-1 bg-slate-50`}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -67,64 +66,168 @@ export default function Results() {
         <Navbar variant="hero" />
         <Pressable onPress={() => router.back()} style={tw`mb-7 mt-3 flex-row items-center`}>
           <Ionicons name="arrow-back" size={20} color="#0F766E" />
-          <Text style={tw`ml-2 text-sm font-bold text-teal-700`}>Back to assessment</Text>
+          <Text style={tw`ml-2 text-sm font-bold text-teal-700`}>Back</Text>
         </Pressable>
-
-        <Text style={tw`text-xs font-bold tracking-widest text-teal-700`}>DECISION SUPPORT</Text>
         <Text style={tw`mt-2 text-3xl font-bold text-slate-900`}>Assessment result</Text>
-        <Text style={tw`mt-2 text-sm leading-5 text-slate-500`}>Prediction returned by the FastAPI model service.</Text>
+    
 
-        <View style={tw`mt-6 rounded-3xl bg-teal-800 p-5 shadow-sm`}>
-          <Text style={tw`text-xs font-bold tracking-widest text-teal-100`}>PATIENT</Text>
-          <Text style={tw`mt-2 text-2xl font-bold text-white`}>{name}</Text>
-          <Text style={tw`mt-1 text-sm text-teal-100`}>{age} years old</Text>
-          <Text style={tw`mt-1 text-sm text-teal-100`}>{temperature} °C · BP {bloodPressure}</Text>
-          <View style={tw`mt-5 rounded-xl bg-teal-600 p-3`}>
-            <Text style={tw`text-xs font-semibold text-teal-100`}>Reported symptoms</Text>
-            <Text style={tw`mt-1 text-sm leading-5 text-white`}>{symptomText || "No symptoms provided"}</Text>
+        <View style={tw`mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm`}>
+          <View style={tw`flex-row items-center justify-between`}>
+            <View>
+              <Text style={tw`text-xs font-bold tracking-widest text-teal-700`}>PATIENT ENCOUNTER</Text>
+              <Text style={tw`mt-2 text-xl font-bold text-slate-900`}>{name}</Text>
+            </View>
+            <View style={tw`h-11 w-11 items-center justify-center rounded-xl bg-teal-50`}>
+              <Ionicons name="person-outline" size={22} color="#0F766E" />
+            </View>
+          </View>
+          <View style={tw`mt-5 flex-row gap-3`}>
+            <Vital label="Age" value={`${age} years`} />
+            <Vital label="Temperature" value={`${temperature} °C`} />
+            <Vital label="Blood pressure" value={bloodPressure} />
+          </View>
+          <View style={tw`mt-4 rounded-xl bg-slate-50 p-3`}>
+            <Text style={tw`text-xs font-bold uppercase tracking-widest text-slate-500`}>Reported symptoms</Text>
+            <Text style={tw`mt-2 text-sm leading-5 text-slate-800`}>{symptomText || "No symptoms provided"}</Text>
           </View>
         </View>
 
         {diseaseText ? (
           <>
+            {triageResult ? <TriageCard triage={triageResult} offline={offline === "true"} /> : null}
+            {modelSymptoms.length ? <ModelSymptoms symptoms={modelSymptoms} /> : null}
+            <SymptomExplanation explanation={explanation} isLoading={isLoadingExplanation} hasError={explanationError} />
             <ResultCard
               icon="medkit-outline"
-              title={diseaseText === "Insufficient evidence" ? "Possible match (low confidence)" : "Possible match"}
+              title={statusText === "low_confidence" ? "Predicted Disease" : diseaseText === "Insufficient evidence" ? "Insufficient evidence" : "Possible match"}
               message={diseaseText === "Insufficient evidence"
-                ? topMatch
-                  ? `${topMatch.disease} (${Math.round(topMatch.confidence * 100)}% model confidence). Add more specific symptoms before relying on this result.`
-                  : "The model needs at least one more specific symptom before it can make a reliable prediction. Review any result with a qualified healthcare professional."
+                ? " Add a more specific symptom and review the possibilities with a qualified healthcare professional."
+                : statusText === "low_confidence"
+                ? topPredictions[0]
+                  ? `${topPredictions[0].disease} (${Math.round(topPredictions[0].confidence * 100)}%)`
+                  : "No possible disease"
                 : `${diseaseText}${confidenceText ? ` (${Math.round(Number(confidenceText) * 100)}% confidence)` : ""}`}
             />
             <ResultCard icon="list-outline" title="Recommendations" message={recommendationText || "Review this result with a qualified healthcare professional."} />
-            <Text style={tw`mt-3 text-right text-xs text-slate-400`}>Model {modelVersionText || "unknown"}</Text>
-            <TopPredictions predictions={topPredictions} />
+            <Text style={tw`mt-3 text-right text-xs text-slate-400`}></Text>
+            <OtherPossibleDiseases predictions={topPredictions.slice(1, )} />
           </>
         ) : (
           <ResultPlaceholder
             icon="medkit-outline"
             title="Prediction unavailable"
-            message={error || "FastAPI did not return a prediction. Check that the backend is running and reachable from this device."}
+            message={error || "check server maybe its down."}
           />
         )}
 
-        <PredictionChat
-          messages={messages}
-          question={question}
-          onQuestionChange={setQuestion}
-          onAsk={askQuestion}
-        />
-
-        <View style={tw`mt-6 flex-row items-start rounded-2xl bg-slate-100 p-4`}>
-          <Ionicons name="information-circle-outline" size={21} color="#64748B" />
-          <Text style={tw`ml-3 flex-1 text-xs leading-5 text-slate-500`}>Assessment {assessmentId ? `${assessmentId} was ` : "was "}processed by FastAPI. Predicted disease and recommendations require the exported model and review by a qualified health professional.</Text>
-        </View>
-
         <Pressable onPress={() => router.replace("/Assess")} style={({ pressed }) => [tw`mt-6 items-center rounded-xl bg-teal-700 py-4`, pressed && tw`opacity-80`]}>
-          <Text style={tw`font-bold text-white`}>Start another assessment</Text>
+          <Text style={tw`font-bold text-white`}> Assess again</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function parseTriage(value: string): TriageRecommendation | null {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && ["emergency", "urgent", "routine"].includes(parsed.level) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseSymptoms(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function ModelSymptoms({ symptoms }: { symptoms: string[] }) {
+  return (
+    <View style={tw`mt-5 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm`}>
+      <Text style={tw`text-base font-bold text-slate-900`}>Symptoms recognized by model</Text>
+      <Text style={tw`mt-2 text-sm leading-5 text-slate-600`}>{symptoms.join(", ")}</Text>
+    </View>
+  );
+}
+
+function Vital({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={tw`flex-1 rounded-xl bg-slate-50 p-3`}>
+      <Text style={tw`text-[10px] font-bold uppercase tracking-wide text-slate-500`}>{label}</Text>
+      <Text style={tw`mt-1 text-xs font-bold text-slate-900`}>{value || "Not recorded"}</Text>
+    </View>
+  );
+}
+
+function SymptomExplanation({ explanation, isLoading, hasError }: { explanation: AssessmentExplanation | null; isLoading: boolean; hasError: boolean }) {
+  const displayedFeatures = explanation?.features.filter((item) => item.direction === "supports" || item.feature.includes("temperature")) ?? [];
+  const clinicalSignals = explanation?.clinicalSignals ?? [];
+  if (!isLoading && !displayedFeatures.length && !clinicalSignals.length && !hasError) return null;
+
+  if (isLoading) {
+    return (
+      <View style={tw`mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm`}>
+        <Text style={tw`text-base font-bold text-slate-900`}>Symptom contribution</Text>
+        <Text style={tw`mt-2 text-sm text-slate-500`}>Loading model explanation...</Text>
+      </View>
+    );
+  }
+
+  if (hasError) {
+    return (
+      <View style={tw`mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-5`}>
+        <Text style={tw`text-base font-bold text-amber-900`}>Symptom contribution unavailable</Text>
+        <Text style={tw`mt-2 text-sm leading-5 text-amber-800`}>The prediction is available, but the model explanation could not be loaded. Check that the backend is running and try the assessment again.</Text>
+      </View>
+    );
+  }
+
+  const maximumContribution = Math.max(...displayedFeatures.map((item) => Math.abs(item.contribution)), 1);
+  return (
+    <View style={tw`mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm`}>
+      <Text style={tw`text-base font-bold text-slate-900`}>Model contribution</Text>
+      <Text style={tw`mt-1 text-xs leading-4 text-slate-500`}>Entered symptoms and temperature used for this prediction.</Text>
+      <View style={tw`mt-4 gap-3`}>
+        {displayedFeatures.map((item) => (
+          <View key={`${item.feature}-${item.contribution}`}>
+            <View style={tw`flex-row items-center justify-between`}>
+              <Text style={tw`flex-1 text-sm font-semibold capitalize text-slate-700`}>{item.feature.replaceAll("_", " ")}</Text>
+              <Text style={tw`text-xs font-bold ${item.direction === "supports" ? "text-emerald-700" : "text-rose-700"}`}>{item.direction === "supports" ? "Supports" : "Opposes"}</Text>
+            </View>
+            <View style={tw`mt-1 h-2 overflow-hidden rounded-full bg-slate-100`}>
+              <View style={[tw`h-full rounded-full ${item.direction === "supports" ? "bg-emerald-500" : "bg-rose-400"}`, { width: `${Math.max(8, Math.round((Math.abs(item.contribution) / maximumContribution) * 100))}%` }]} />
+            </View>
+          </View>
+        ))}
+      </View>
+      {clinicalSignals.length ? <View style={tw`mt-5 border-t border-slate-100 pt-4`}>
+        <Text style={tw`text-sm font-bold text-slate-900`}>Clinical vital-sign signals</Text>
+        <View style={tw`mt-3 gap-3`}>
+          {clinicalSignals.map((signal) => <View key={`${signal.feature}-${signal.value}`} style={tw`rounded-xl ${signal.status === "high" ? "bg-rose-50" : "bg-sky-50"} p-3`}><View style={tw`flex-row items-center justify-between`}><Text style={tw`text-sm font-bold text-slate-800`}>{signal.feature}</Text><Text style={tw`text-sm font-bold ${signal.status === "high" ? "text-rose-700" : "text-sky-700"}`}>{signal.status.toUpperCase()} · {signal.value}</Text></View><Text style={tw`mt-1 text-xs leading-4 text-slate-600`}>{signal.meaning}</Text></View>)}
+        </View>
+      </View> : null}
+    </View>
+  );
+}
+
+function TriageCard({ triage, offline }: { triage: TriageRecommendation; offline: boolean }) {
+  const color = triage.level === "emergency" ? "rose" : triage.level === "urgent" ? "amber" : "teal";
+  return (
+    <View style={tw`mt-6 rounded-2xl border border-${color}-200 bg-${color}-50 p-5`}>
+      <View style={tw`flex-row items-center justify-between`}>
+        <Text style={tw`text-xs font-bold tracking-widest text-${color}-700`}>TRIAGE PRIORITY</Text>
+        <Ionicons name={triage.level === "emergency" ? "warning-outline" : "time-outline"} size={22} color={triage.level === "emergency" ? "#BE123C" : triage.level === "urgent" ? "#B45309" : "#0F766E"} />
+      </View>
+      <Text style={tw`mt-2 text-2xl font-bold capitalize text-slate-900`}>{triage.level}</Text>
+      <Text style={tw`mt-2 text-sm leading-5 text-slate-700`}>{triage.action}</Text>
+      <View style={tw`mt-3 rounded-xl bg-white/70 p-3`}><Text style={tw`text-xs leading-4 text-slate-600`}>{triage.rationale}</Text></View>
+      {offline ? <Text style={tw`mt-3 text-xs font-semibold text-sky-700`}>Offline rule engine. This encounter is queued for sync.</Text> : null}
+    </View>
   );
 }
 
@@ -137,121 +240,29 @@ function parsePredictions(value: string) {
   }
 }
 
-function TopPredictions({ predictions }: { predictions: { disease: string; confidence: number }[] }) {
-  if (!predictions.length) return null;
+function OtherPossibleDiseases({ predictions }: { predictions: { disease: string; confidence: number }[] }) {
+  const visiblePredictions = predictions.filter((prediction) => prediction.confidence > 0);
+  if (!visiblePredictions.length) return null;
 
   return (
-    <View style={tw`mt-5 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm`}>
-      <Text style={tw`text-base font-bold text-slate-900`}>Top 5 model matches</Text>
-      <Text style={tw`mt-1 text-xs leading-4 text-slate-500`}>These are ranked possibilities, not confirmed diagnoses.</Text>
+    <View style={tw`mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm`}>
+      <Text style={tw`text-base font-bold text-slate-900`}>Other possible diseases</Text>
       <View style={tw`mt-3 gap-3`}>
-        {predictions.map((prediction, index) => (
-          <View key={`${prediction.disease}-${index}`} style={tw`flex-row items-center`}>
-            <Text style={tw`w-6 text-xs font-bold text-slate-400`}>{index + 1}</Text>
+        {visiblePredictions.map((prediction) => (
+          <View key={prediction.disease} style={tw`flex-row items-center`}>
             <Text style={tw`flex-1 text-sm font-semibold text-slate-700`}>{prediction.disease}</Text>
             <Text style={tw`text-xs font-bold text-teal-700`}>{Math.round(prediction.confidence * 100)}%</Text>
+            
           </View>
         ))}
       </View>
     </View>
   );
-}
-
-function PredictionChat({
-  messages,
-  question,
-  onQuestionChange,
-  onAsk,
-}: {
-  messages: ChatMessage[];
-  question: string;
-  onQuestionChange: (value: string) => void;
-  onAsk: (value?: string) => void;
-}) {
-  const suggestedQuestions = ["What does the confidence mean?", "Why this prediction?", "What should I do next?"];
-
-  return (
-    <View style={tw`mt-6 rounded-2xl border border-teal-100 bg-white p-4 shadow-sm`}>
-      <View style={tw`flex-row items-center`}>
-        <View style={tw`h-10 w-10 items-center justify-center rounded-full bg-teal-50`}>
-          <Ionicons name="chatbubbles-outline" size={21} color="#0F766E" />
-        </View>
-        <View style={tw`ml-3 flex-1`}>
-          <Text style={tw`text-lg font-bold text-slate-900`}>Talk through the prediction</Text>
-          <Text style={tw`mt-1 text-xs text-slate-500`}>Ask a question and I will explain this result.</Text>
-        </View>
-      </View>
-
-      <View style={tw`mt-4 gap-3`}>
-        {messages.map((message) => (
-          <View key={message.id} style={message.role === "user" ? tw`self-end rounded-2xl rounded-br-sm bg-teal-700 px-3 py-2` : tw`self-start max-w-full rounded-2xl rounded-bl-sm bg-slate-100 px-3 py-2`}>
-            <Text style={message.role === "user" ? tw`text-sm leading-5 text-white` : tw`text-sm leading-5 text-slate-700`}>{message.text}</Text>
-          </View>
-        ))}
-      </View>
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tw`mt-4 gap-2`}>
-        {suggestedQuestions.map((suggestedQuestion) => (
-          <Pressable key={suggestedQuestion} onPress={() => onAsk(suggestedQuestion)} style={({ pressed }) => [tw`rounded-full border border-teal-200 px-3 py-2`, pressed && tw`opacity-70`]}>
-            <Text style={tw`text-xs font-semibold text-teal-700`}>{suggestedQuestion}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-
-      <View style={tw`mt-3 flex-row items-end rounded-xl border border-slate-200 px-3`}>
-        <TextInput
-          value={question}
-          onChangeText={onQuestionChange}
-          onSubmitEditing={() => onAsk()}
-          placeholder="Ask about this prediction..."
-          placeholderTextColor="#94A3B8"
-          returnKeyType="send"
-          style={tw`max-h-20 min-h-11 flex-1 py-3 text-sm text-slate-900`}
-        />
-        <Pressable accessibilityLabel="Ask question" disabled={!question.trim()} onPress={() => onAsk()} style={({ pressed }) => [tw`mb-1 h-9 w-9 items-center justify-center rounded-lg bg-teal-700`, (!question.trim() || pressed) && tw`opacity-50`]}>
-          <Ionicons name="arrow-up" size={19} color="#FFFFFF" />
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-function answerPredictionQuestion(
-  question: string,
-  result: { diseaseText: string; confidenceText: string; symptomText: string; recommendationText: string; modelVersionText: string },
-) {
-  const normalizedQuestion = question.toLowerCase();
-  const confidence = Number(result.confidenceText);
-  const confidenceLabel = result.confidenceText && Number.isFinite(confidence) ? `${Math.round(confidence * 100)}%` : "not available";
-
-  if (normalizedQuestion.includes("confidence") || normalizedQuestion.includes("sure") || normalizedQuestion.includes("accurate")) {
-    return result.diseaseText
-      ? `The model reported ${confidenceLabel} confidence for ${result.diseaseText}. Confidence is the model's estimate, not a diagnosis or a guarantee of accuracy.`
-      : "There is no confidence score because a model prediction has not been returned yet.";
-  }
-
-  if (normalizedQuestion.includes("why") || normalizedQuestion.includes("based") || normalizedQuestion.includes("symptom")) {
-    return result.diseaseText
-      ? `This result was generated from the reported symptoms: ${result.symptomText || "no symptoms listed"}. The model compares those inputs with patterns it learned from its training data, but it does not replace a clinical examination.`
-      : "The prediction cannot be explained yet because the model result is unavailable."
-  }
-
-  if (normalizedQuestion.includes("next") || normalizedQuestion.includes("do") || normalizedQuestion.includes("recommend")) {
-    return result.recommendationText || "Please review the result with a qualified healthcare professional, especially if symptoms are severe, worsening, or unexpected.";
-  }
-
-  if (normalizedQuestion.includes("model") || normalizedQuestion.includes("version")) {
-    return `This result came from model ${result.modelVersionText || "version information was not returned"}. The model is decision support and should be considered alongside clinical judgment.`;
-  }
-
-  return result.diseaseText
-    ? `The prediction shown is ${result.diseaseText} with ${confidenceLabel} confidence. You can ask me about the confidence, the symptoms used, the recommendation, or what to do next.`
-    : "I can answer questions about confidence, symptoms, recommendations, and model status once a prediction is available.";
 }
 
 function ResultPlaceholder({ icon, title, message }: { icon: keyof typeof Ionicons.glyphMap; title: string; message: string }) {
   return (
-    <View style={tw`mt-6 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm`}>
+    <View style={tw`mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm`}>
       <View style={tw`h-11 w-11 items-center justify-center rounded-xl bg-teal-50`}>
         <Ionicons name={icon} size={23} color="#0F766E" />
       </View>

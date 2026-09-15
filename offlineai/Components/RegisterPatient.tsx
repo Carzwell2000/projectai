@@ -2,12 +2,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import tw from "twrnc";
+import { getApiErrorMessage } from "../services/api";
 
 export type NewPatient = {
+  id?: string;
   name: string;
   phone: string;
   dateOfBirth: string;
-  condition: string;
 };
 
 type RegisterPatientProps = {
@@ -19,8 +20,8 @@ export default function RegisterPatient({ onCancel, onSave }: RegisterPatientPro
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
-  const [condition, setCondition] = useState("");
   const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = async () => {
     if (!name.trim() || !phone.trim() || !dateOfBirth.trim()) {
@@ -29,14 +30,17 @@ export default function RegisterPatient({ onCancel, onSave }: RegisterPatientPro
     }
 
     try {
+      setIsSaving(true);
       await onSave({
+        id: `patient-${Date.now()}`,
         name: name.trim(),
         phone: phone.trim(),
         dateOfBirth: dateOfBirth.trim(),
-        condition: condition.trim() || "General health review",
       });
-    } catch {
-      setError("FastAPI is unavailable. The patient was not saved.");
+    } catch (error) {
+      setError(getApiErrorMessage(error));
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -57,16 +61,16 @@ export default function RegisterPatient({ onCancel, onSave }: RegisterPatientPro
         <FormField label="Full name" placeholder="e.g. Maya Okafor" value={name} onChangeText={setName} />
         <FormField label="Phone number" placeholder="e.g. +234 800 000 0000" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
         <FormField label="Date of birth" placeholder="DD / MM / YYYY" value={dateOfBirth} onChangeText={setDateOfBirth} />
-        <FormField label="Primary concern (optional)" placeholder="e.g. Respiratory symptoms" value={condition} onChangeText={setCondition} />
 
         {error ? <Text style={tw`mb-3 text-sm font-medium text-rose-600`}>{error}</Text> : null}
 
         <Pressable
           accessibilityRole="button"
           onPress={handleSave}
-          style={({ pressed }) => [tw`items-center rounded-xl bg-teal-700 py-4`, pressed && tw`opacity-80`]}
+          disabled={isSaving}
+          style={({ pressed }) => [tw`items-center rounded-xl bg-teal-700 py-4`, (pressed || isSaving) && tw`opacity-60`]}
         >
-          <Text style={tw`font-bold text-white`}>Save patient</Text>
+          <Text style={tw`font-bold text-white`}>{isSaving ? "Saving..." : "Save patient"}</Text>
         </Pressable>
         <Pressable accessibilityRole="button" onPress={onCancel} style={tw`mt-3 items-center py-3`}>
           <Text style={tw`font-semibold text-slate-500`}>Cancel</Text>

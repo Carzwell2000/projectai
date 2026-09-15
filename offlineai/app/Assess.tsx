@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import {
+  Modal,
   Pressable,
   ScrollView,
   Text,
@@ -12,11 +13,18 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import tw from "twrnc";
 
 import Navbar from "../Components/Navbar";
-import { createAssessment, parseAssessment } from "../services/api";
+import { createAssessment, getApiErrorMessage, listPatients, parseAssessment, type AssessmentResult, type PatientRecord } from "../services/api";
+import { inferOfflineTriage } from "../services/offlineTriage";
+import { saveOfflineAssessment } from "../services/offlineStorage";
+import { useSyncStore } from "../stores/syncStore";
 
 export default function Assess() {
   const router = useRouter();
 
+  const [patients, setPatients] = useState<PatientRecord[]>([]);
+  const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null);
+  const [isPatientPickerOpen, setIsPatientPickerOpen] = useState(false);
+  const [isLoadingPatients, setIsLoadingPatients] = useState(true);
   const [patientName, setPatientName] = useState("");
   const [age, setAge] = useState("");
   const [temperature, setTemperature] = useState("");
@@ -26,8 +34,42 @@ export default function Assess() {
   const [validationMessage, setValidationMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  useFocusEffect(
+    useCallback(() => {
+    let isActive = true;
+    setIsLoadingPatients(true);
+    listPatients()
+      .then((records) => {
+        if (isActive) setPatients(records);
+      })
+      .catch(() => {
+        if (isActive) setValidationMessage("Unable to load registered patients.");
+      })
+      .finally(() => {
+        if (isActive) setIsLoadingPatients(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+    }, []),
+  );
+
+  const selectPatient = (patient: PatientRecord) => {
+    setSelectedPatient(patient);
+    setPatientName(patient.name);
+    setAge(getPatientAge(patient.dateOfBirth));
+    setIsPatientPickerOpen(false);
+    setValidationMessage("");
+  };
+
   const submitAssessment = async () => {
     setValidationMessage("");
+
+    if (!selectedPatient) {
+      setValidationMessage("Select a registered patient before starting an assessment.");
+      return;
+    }
 
     const parsedAssessment = parseAssessment({
       patientName,
@@ -46,15 +88,15 @@ export default function Assess() {
     }
 
     setIsSaving(true);
+    const assessmentRequest = {
+      ...parsedAssessment.data,
+      id: `assessment-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+    };
 
     try {
-      const assessmentRequest = {
-        ...parsedAssessment.data,
-        id: `assessment-${Date.now()}`,
-        createdAt: new Date().toISOString(),
-      };
-
       const prediction = await createAssessment(assessmentRequest);
+      void useSyncStore.getState().refresh();
 
       router.push({
         pathname: "/Results",
@@ -77,8 +119,18 @@ export default function Assess() {
           modelVersion:
             prediction?.modelVersion ?? "",
 
+          status: prediction?.status ?? "",
+
+          triage: prediction?.triage
+            ? JSON.stringify(prediction.triage)
+            : "",
+
           predictions: prediction
             ? JSON.stringify(prediction.predictions)
+            : "[]",
+
+          recognizedSymptoms: prediction
+            ? JSON.stringify(prediction.recognizedSymptoms)
             : "[]",
 
           assessmentId: assessmentRequest.id,
@@ -86,19 +138,51 @@ export default function Assess() {
         },
       });
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "FastAPI is unavailable.";
-
-      setValidationMessage(message);
+      if (isNetworkFailure(error)) {
+        const triage = inferOfflineTriage(assessmentRequest);
+        const offlineResult: AssessmentResult = {
+          ...assessmentRequest,
+          disease: "Triage assessment",
+          confidence: 0,
+          predictions: [],
+          recognizedSymptoms: [],
+          recommendation: triage.action,
+          modelVersion: "rule-engine-offline",
+          status: "offline_triage",
+          triage,
+          syncStatus: "pending_sync",
+        };
+        saveOfflineAssessment(assessmentRequest, offlineResult);
+        router.push({
+          pathname: "/Results",
+          params: {
+            name: assessmentRequest.patientName,
+            age: String(assessmentRequest.age),
+            symptoms: assessmentRequest.symptoms,
+            temperature: String(assessmentRequest.temperature),
+            bloodPressure: assessmentRequest.bloodPressure,
+            disease: offlineResult.disease,
+            confidence: "",
+            recommendation: offlineResult.recommendation,
+            modelVersion: offlineResult.modelVersion,
+            status: offlineResult.status,
+            predictions: "[]",
+            recognizedSymptoms: "[]",
+            triage: JSON.stringify(triage),
+            assessmentId: assessmentRequest.id,
+            offline: "true",
+          },
+        });
+        return;
+      }
+      setValidationMessage(getApiErrorMessage(error));
     } finally {
       setIsSaving(false);
     }
   };
 
   return (
-    <SafeAreaView style={tw`flex-1 bg-slate-50`}>
+    <SafeAreaView style={tw`flex-1 bg-[#F4F8F9}`}>
       <ScrollView
         contentContainerStyle={tw`px-5 pb-8`}
         showsVerticalScrollIndicator={false}
@@ -107,38 +191,28 @@ export default function Assess() {
         <Navbar variant="hero" />
 
         {/* Header */}
-        <View style={tw`pt-3`}>
-          <Text
-            style={tw`text-xs font-bold tracking-widest text-teal-700`}
-          >
-            CLINICAL WORKSPACE
-          </Text>
-
-          <Text
-            style={tw`mt-2 text-3xl font-bold text-slate-900`}
-          >
-            Assess a patient
-          </Text>
-
-          <Text
-            style={tw`mt-2 text-sm leading-5 text-slate-500`}
-          >
-            Capture key information to generate decision support.
-          </Text>
+        <View style={tw`mt-4 overflow-hidden rounded-3xl bg-teal-800 p-5`}>
+          <View style={tw`flex-row items-center justify-between`}>
+            <View style={tw`h-10 w-10 items-center justify-center rounded-xl bg-teal-700`}>
+              <Ionicons name="pulse-outline" size={23} color="#CCFBF1" />
+            </View>
+            <Text style={tw`text-xs font-bold tracking-widest text-teal-200`}>CLINICAL WORKSPACE</Text>
+          </View>
+          <Text style={tw`mt-5 text-3xl font-bold text-white`}>Assess a patient</Text>
+          <Text style={tw`mt-2 text-sm leading-5 text-teal-100`}>Capture symptoms and vital signs for decision support.</Text>
         </View>
 
         {/* Patient Details */}
         <View
-          style={tw`mt-7 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm`}
+          style={tw`mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}
         >
           <View
             style={tw`mb-2 flex-row items-center justify-between`}
           >
-            <Text
-              style={tw`text-sm font-bold text-slate-700`}
-            >
-              Patient details
-            </Text>
+            <View style={tw`flex-row items-center`}>
+              <View style={tw`h-8 w-8 items-center justify-center rounded-lg bg-teal-50`}><Ionicons name="person-outline" size={17} color="#0F766E" /></View>
+              <Text style={tw`ml-2 text-sm font-bold text-slate-800`}>Patient details</Text>
+            </View>
 
             <Text
               style={tw`text-xs font-medium text-teal-700`}
@@ -148,16 +222,22 @@ export default function Assess() {
           </View>
 
           <View style={tw`flex-row gap-3`}>
-            {/* Patient Name */}
+            {/* Registered Patient */}
             <View style={tw`flex-1`}>
               <Text
                 style={tw`mb-2 text-xs font-semibold text-slate-500`}
               >
-                Patient name
+                Registered patient
               </Text>
 
-              <View
-                style={tw`flex-row items-center rounded-xl border border-slate-200 px-3`}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Select a registered patient"
+                onPress={() => setIsPatientPickerOpen(true)}
+                style={({ pressed }) => [
+                  tw`flex-row items-center rounded-xl border border-slate-200 px-3 py-3`,
+                  pressed && tw`opacity-70`,
+                ]}
               >
                 <Ionicons
                   name="person-outline"
@@ -165,17 +245,11 @@ export default function Assess() {
                   color="#94A3B8"
                 />
 
-                <TextInput
-                  value={patientName}
-                  onChangeText={(value) => {
-                    setPatientName(value);
-                    setValidationMessage("");
-                  }}
-                  placeholder="Full name"
-                  placeholderTextColor="#94A3B8"
-                  style={tw`ml-2 flex-1 py-3 text-sm text-slate-900`}
-                />
-              </View>
+                <Text style={tw`ml-2 flex-1 text-sm ${selectedPatient ? "text-slate-900" : "text-slate-400"}`}>
+                  {selectedPatient?.name ?? (isLoadingPatients ? "Loading patients..." : "Select patient")}
+                </Text>
+                <Ionicons name="chevron-down-outline" size={18} color="#64748B" />
+              </Pressable>
             </View>
 
             {/* Age */}
@@ -209,11 +283,10 @@ export default function Assess() {
         <View
           style={tw`mb-3 mt-8 flex-row items-center justify-between`}
         >
-          <Text
-            style={tw`text-lg font-bold text-slate-900`}
-          >
-            Reported symptoms
-          </Text>
+          <View style={tw`flex-row items-center`}>
+            <View style={tw`h-8 w-8 items-center justify-center rounded-lg bg-rose-50`}><Ionicons name="chatbubble-ellipses-outline" size={17} color="#E11D48" /></View>
+            <Text style={tw`ml-2 text-lg font-bold text-slate-900`}>Reported symptoms</Text>
+          </View>
 
           <Text
             style={tw`text-xs font-medium text-teal-700`}
@@ -223,7 +296,7 @@ export default function Assess() {
         </View>
 
         <View
-          style={tw`rounded-2xl border border-slate-100 bg-white p-4 shadow-sm`}
+          style={tw`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}
         >
           <TextInput
             value={symptomsText}
@@ -235,21 +308,20 @@ export default function Assess() {
             placeholder="Type symptoms, separated by commas"
             placeholderTextColor="#94A3B8"
             textAlignVertical="top"
-            style={tw`min-h-28 rounded-xl border border-slate-200 px-4 py-3 text-sm leading-5 text-slate-900`}
+            style={tw`min-h-32 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-5 text-slate-900`}
           />
         </View>
 
         {/* Vital Signs */}
-        <Text
-          style={tw`mb-3 mt-8 text-lg font-bold text-slate-900`}
-        >
-          Vital signs
-        </Text>
+        <View style={tw`mb-3 mt-8 flex-row items-center`}>
+          <View style={tw`h-8 w-8 items-center justify-center rounded-lg bg-amber-50`}><Ionicons name="heart-outline" size={17} color="#D97706" /></View>
+          <Text style={tw`ml-2 text-lg font-bold text-slate-900`}>Vital signs</Text>
+        </View>
 
         <View style={tw`flex-row gap-3`}>
           {/* Temperature */}
           <View
-            style={tw`flex-1 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm`}
+            style={tw`flex-1 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}
           >
             <Text
               style={tw`mb-2 text-sm font-bold text-slate-700`}
@@ -288,7 +360,7 @@ export default function Assess() {
 
           {/* Blood Pressure */}
           <View
-            style={tw`flex-1 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm`}
+            style={tw`flex-1 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}
           >
             <Text
               style={tw`mb-2 text-sm font-bold text-slate-700`}
@@ -345,18 +417,84 @@ export default function Assess() {
             disabled={isSaving}
             onPress={submitAssessment}
             style={({ pressed }) => [
-              tw`items-center rounded-xl bg-teal-700 py-4`,
+              tw`items-center rounded-xl bg-teal-700 py-4 shadow-sm`,
               (pressed || isSaving) && tw`opacity-80`,
             ]}
           >
             <Text
               style={tw`font-bold text-white`}
             >
-              {isSaving ? "Assessing..." : "Assess"}
+              {isSaving ? "Generating assessment..." : "Generate assessment"}
             </Text>
           </Pressable>
         </View>
       </ScrollView>
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={isPatientPickerOpen}
+        onRequestClose={() => setIsPatientPickerOpen(false)}
+      >
+        <Pressable style={tw`flex-1 justify-end bg-slate-900/30`} onPress={() => setIsPatientPickerOpen(false)}>
+          <Pressable style={tw`max-h-[70%] rounded-t-3xl bg-white px-5 pb-8 pt-5`} onPress={(event) => event.stopPropagation()}>
+            <View style={tw`mb-4 flex-row items-center justify-between`}>
+              <View>
+                <Text style={tw`text-xs font-bold tracking-widest text-teal-700`}>PATIENT SELECTION</Text>
+                <Text style={tw`mt-1 text-xl font-bold text-slate-900`}>Choose a registered patient</Text>
+              </View>
+              <Pressable accessibilityLabel="Close patient selection" onPress={() => setIsPatientPickerOpen(false)} style={tw`h-9 w-9 items-center justify-center rounded-full bg-slate-100`}>
+                <Ionicons name="close-outline" size={22} color="#475569" />
+              </Pressable>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {patients.map((patient) => (
+                <Pressable
+                  key={patient.id}
+                  onPress={() => selectPatient(patient)}
+                  style={({ pressed }) => [tw`mb-2 flex-row items-center rounded-xl border border-slate-200 px-4 py-4`, pressed && tw`bg-teal-50`]}
+                >
+                  <View style={tw`h-10 w-10 items-center justify-center rounded-full bg-teal-50`}>
+                    <Ionicons name="person-outline" size={20} color="#0F766E" />
+                  </View>
+                  <View style={tw`ml-3 flex-1`}>
+                    <Text style={tw`font-bold text-slate-900`}>{patient.name}</Text>
+                    <Text style={tw`mt-1 text-xs text-slate-500`}>DOB: {patient.dateOfBirth}</Text>
+                  </View>
+                  {selectedPatient?.id === patient.id ? <Ionicons name="checkmark-circle" size={22} color="#0F766E" /> : null}
+                </Pressable>
+              ))}
+              {patients.length === 0 ? (
+                <View style={tw`items-center rounded-xl bg-slate-50 px-4 py-8`}>
+                  <Text style={tw`text-center text-sm text-slate-500`}>No registered patients found.</Text>
+                  <Pressable onPress={() => { setIsPatientPickerOpen(false); router.push("/RegisteredPatients"); }} style={tw`mt-4 rounded-xl bg-teal-700 px-4 py-3`}>
+                    <Text style={tw`font-bold text-white`}>Register a patient</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
+}
+
+function getPatientAge(dateOfBirth: string): string {
+  const parts = dateOfBirth.split(/[\s/-]+/).map(Number);
+  const date = parts.length === 3
+    ? new Date(parts[2], parts[1] - 1, parts[0])
+    : new Date(dateOfBirth);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const today = new Date();
+  let age = today.getFullYear() - date.getFullYear();
+  const birthdayHasNotPassed = today.getMonth() < date.getMonth()
+    || (today.getMonth() === date.getMonth() && today.getDate() < date.getDate());
+  if (birthdayHasNotPassed) age -= 1;
+  return String(Math.max(0, age));
+}
+
+function isNetworkFailure(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "response" in error && !(error as { response?: unknown }).response);
 }

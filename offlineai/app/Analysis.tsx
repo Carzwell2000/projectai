@@ -1,25 +1,33 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import tw from "twrnc";
 import Navbar from "../Components/Navbar";
-import SymptomTrendChart, { SymptomTrendPoint } from "../Components/SymptomTrendChart";
+import SymptomTrendChart, { SymptomTrendPoint } from "../Components/Analytics";
+import { getModelCatalog, type ModelCatalog } from "../services/api";
+import { getCachedModelCatalog, saveModelCatalog } from "../services/offlineStorage";
 
 const posthogSymptomTrend: SymptomTrendPoint[] = [
   { label: "Mon", value: 18 }, { label: "Tue", value: 24 }, { label: "Wed", value: 21 },
   { label: "Thu", value: 32 }, { label: "Fri", value: 28 }, { label: "Sat", value: 36 }, { label: "Sun", value: 31 },
 ];
 
-const commonSymptoms = [
-  { name: "Fever", count: 84, color: "#0F766E" },
-  { name: "Cough", count: 71, color: "#0284C7" },
-  { name: "Headache", count: 58, color: "#D97706" },
-  { name: "Difficulty breathing", count: 32, color: "#E11D48" },
-];
-
 export default function AnalysisScreen() {
   const router = useRouter();
+  const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
+
+  useEffect(() => {
+    const cachedCatalog = getCachedModelCatalog();
+    if (cachedCatalog) setModelCatalog(cachedCatalog);
+    getModelCatalog()
+      .then((catalog) => {
+        setModelCatalog(catalog);
+        saveModelCatalog(catalog);
+      })
+      .catch(() => undefined);
+  }, []);
 
   return (
     <SafeAreaView style={tw`flex-1 bg-slate-50`}>
@@ -54,22 +62,18 @@ export default function AnalysisScreen() {
         <View style={tw`mt-6 rounded-2xl bg-white p-4`}>
           <View style={tw`flex-row items-center justify-between`}>
             <View>
-              <Text style={tw`text-lg font-bold text-slate-900`}>Most reported symptoms</Text>
-              <Text style={tw`mt-1 text-xs text-slate-500`}>Across current assessments</Text>
+              <Text style={tw`text-lg font-bold text-slate-900`}>Model knowledge base</Text>
+              <Text style={tw`mt-1 text-xs text-slate-500`}>Vocabulary loaded from the trained model</Text>
             </View>
             <Ionicons name="bar-chart-outline" size={22} color="#0F766E" />
           </View>
-          <View style={tw`mt-5 gap-4`}>
-            {commonSymptoms.map((symptom, index) => (
-              <View key={symptom.name}>
-                <View style={tw`mb-2 flex-row items-center justify-between`}>
-                  <View style={tw`flex-row items-center`}><Text style={tw`w-6 text-xs font-bold text-slate-400`}>0{index + 1}</Text><Text style={tw`text-sm font-semibold text-slate-700`}>{symptom.name}</Text></View>
-                  <Text style={tw`text-sm font-bold text-slate-900`}>{symptom.count}</Text>
-                </View>
-                <View style={tw`h-2 overflow-hidden rounded-full bg-slate-100`}><View style={[tw`h-full rounded-full`, { width: `${(symptom.count / commonSymptoms[0].count) * 100}%`, backgroundColor: symptom.color }]} /></View>
-              </View>
-            ))}
+          <View style={tw`mt-5 flex-row gap-3`}>
+            <CatalogMetric label="Diseases" value={modelCatalog ? String(modelCatalog.diseases.length) : "--"} />
+            <CatalogMetric label="Symptoms" value={modelCatalog ? String(modelCatalog.symptoms.length) : "--"} />
           </View>
+          <Text style={tw`mt-4 text-xs leading-5 text-slate-500`}>
+            {modelCatalog ? `Model ${modelCatalog.modelVersion} recognizes symptoms such as ${modelCatalog.symptoms.slice(0, 4).join(", ")}.` : "Connect to the API to load the model vocabulary."}
+          </Text>
         </View>
 
         <View style={tw`mt-6 flex-row items-start rounded-2xl bg-amber-50 p-4`}>
@@ -82,6 +86,15 @@ export default function AnalysisScreen() {
 }
 
 type MetricProps = { label: string; value: string; change: string; icon: keyof typeof Ionicons.glyphMap };
+
+function CatalogMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={tw`flex-1 rounded-xl bg-slate-50 p-3`}>
+      <Text style={tw`text-2xl font-bold text-slate-900`}>{value}</Text>
+      <Text style={tw`mt-1 text-xs font-medium text-slate-500`}>{label}</Text>
+    </View>
+  );
+}
 
 function Metric({ label, value, change, icon }: MetricProps) {
   return (

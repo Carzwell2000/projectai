@@ -1,14 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import tw from "twrnc";
 import Navbar from "../Components/Navbar";
-import RegisterPatient, { NewPatient } from "../Components/RegisterPatient";
-import { createPatient, listAssessments, listPatients, type LocalAssessment, type PatientRecord } from "../services/api";
+import { listAssessments, type LocalAssessment } from "../services/api";
 
-type Patient = NewPatient & {
+type Patient = {
+  name: string;
   id: string;
   age: string;
   temperature: string;
@@ -20,7 +20,6 @@ type Patient = NewPatient & {
 export default function Patientrecords() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [search, setSearch] = useState("");
-  const [isRegistering, setIsRegistering] = useState(false);
   const [loadError, setLoadError] = useState("");
   const tableScrollRef = useRef<ScrollView>(null);
   const [tableOffset, setTableOffset] = useState(0);
@@ -32,24 +31,17 @@ export default function Patientrecords() {
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
-      Promise.all([listPatients(), listAssessments()]).then(([serverPatients, assessments]) => {
+
+      listAssessments().then((assessments) => {
         if (!isActive) return;
         setLoadError("");
-        const assessmentPatients = assessments.map(assessmentToPatient);
-        setPatients([...serverPatients.map(patientToRow), ...assessmentPatients]);
-      }).catch((error) => {
-        if (!isActive) return;
-        setLoadError(error instanceof Error ? error.message : "FastAPI is unavailable.");
+        setPatients(assessments.map(assessmentToPatient));
+      }).catch(() => {
+        if (isActive) setLoadError("FastAPI is unavailable.");
       });
       return () => { isActive = false; };
     }, []),
   );
-
-  const registerPatient = async (newPatient: NewPatient) => {
-    const patient = await createPatient(newPatient);
-    setPatients((currentPatients) => [patientToRow(patient), ...currentPatients]);
-    setIsRegistering(false);
-  };
 
   return (
     <SafeAreaView style={tw`flex-1 bg-slate-50`}>
@@ -60,9 +52,6 @@ export default function Patientrecords() {
             <Text style={tw`text-xs font-bold tracking-widest text-teal-700`}>PATIENT CARE</Text>
             <Text style={tw`mt-2 text-3xl font-bold text-slate-900`}>Patient records</Text>
           </View>
-          <Pressable accessibilityLabel="Register patient" onPress={() => setIsRegistering(true)} style={tw`h-11 w-11 items-center justify-center rounded-full bg-teal-600`}>
-            <Ionicons name="person-add-outline" size={21} color="white" />
-          </Pressable>
         </View>
 
         <View style={tw`mt-6 flex-row items-center rounded-xl bg-white px-3`}>
@@ -122,33 +111,14 @@ export default function Patientrecords() {
           </View>
         </ScrollView>
       </ScrollView>
-      <Modal animationType="slide" transparent visible={isRegistering} onRequestClose={() => setIsRegistering(false)}>
-        <View style={tw`flex-1 justify-end bg-slate-900/30`}>
-          <RegisterPatient onCancel={() => setIsRegistering(false)} onSave={registerPatient} />
-        </View>
-      </Modal>
     </SafeAreaView>
   );
-}
-
-function patientToRow(patient: PatientRecord): Patient {
-  return {
-    ...patient,
-    age: "--",
-    temperature: "--",
-    symptoms: patient.condition,
-    bloodPressure: "--",
-    recommendations: "Await assessment",
-  };
 }
 
 function assessmentToPatient(assessment: LocalAssessment): Patient {
   return {
     name: assessment.patient_name,
     id: assessment.id,
-    phone: "",
-    dateOfBirth: "",
-    condition: assessment.disease || "Clinical assessment",
     age: String(assessment.age),
     temperature: `${assessment.temperature} °C`,
     symptoms: assessment.symptoms,

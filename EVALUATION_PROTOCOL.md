@@ -41,8 +41,9 @@ recommendations are decision support and require qualified clinical judgment.
 
 ## Requirement status
 
-- Clinical knowledge base: implemented as 15 auditable rules in
-  `backend/clinical_rules.py` and `offlineai/services/clinicalRules.ts`.
+- Clinical knowledge base: implemented as auditable danger-sign, vital-sign,
+  and risk-group rules in `backend/rule_engine.py` and
+  `offlineai/services/offlineTriage.ts`.
 - Rule-based inference and triage: implemented and covered by executable tests.
 - Android/mobile capture: implemented in `offlineai/app/Assess.tsx`.
 - Offline storage and synchronization: implemented with Expo SQLite and retry

@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api")
 @router.post("/explain")
 def explain(request: ExplanationRequest) -> dict[str, Any]:
     try:
-        return explain_assessment(request.symptoms, request.temperature)
+        return explain_assessment(request.symptoms, request.temperature, request.bloodPressure)
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
 
