@@ -1,14 +1,33 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { useEffect } from "react";
-import { getModelCatalog } from "../services/api";
-import { saveModelCatalog } from "../services/offlineStorage";
+import { getModelCatalog, healthCheck } from "../services/api";
+import { useAuthStore } from "../stores/authStore";
+import Login from "./Login";
+import Admin from "../Components/Admin";
 
 
 export default function RootLayout() {
+  const session = useAuthStore((state) => state.session);
+  const clearSession = useAuthStore((state) => state.clearSession);
+
   useEffect(() => {
-    getModelCatalog().then(saveModelCatalog).catch(() => undefined);
-  }, []);
+    if (!session) return;
+    getModelCatalog().catch(() => undefined);
+    const checkBackend = async () => {
+      try {
+        await healthCheck();
+      } catch {
+        clearSession();
+      }
+    };
+    void checkBackend();
+    const interval = setInterval(() => void checkBackend(), 5 * 60_000);
+    return () => clearInterval(interval);
+  }, [clearSession, session]);
+
+  if (!session) return <Login />;
+  if (session.nurse.role === "admin") return <Admin />;
 
   return (
     <Tabs
@@ -35,6 +54,10 @@ export default function RootLayout() {
         },
       }}
     >
+      <Tabs.Screen
+        name="Login"
+        options={{ tabBarButton: () => null, tabBarItemStyle: { display: "none" } }}
+      />
       <Tabs.Screen
         name="Home"
         options={{
@@ -81,6 +104,13 @@ export default function RootLayout() {
       />
       <Tabs.Screen
         name="Settings"
+        options={{
+          tabBarButton: () => null,
+          tabBarItemStyle: { display: "none" },
+        }}
+      />
+      <Tabs.Screen
+        name="ChangePassword"
         options={{
           tabBarButton: () => null,
           tabBarItemStyle: { display: "none" },

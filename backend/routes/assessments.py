@@ -2,11 +2,12 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 
 from main import (
     AssessmentRequest,
     AssessmentSyncRequest,
+    AUTH_DATABASE_PATH,
     LOCAL_DATABASE_PATH,
     PATIENTS_DATABASE_PATH,
     ensure_local_schema,
@@ -16,10 +17,12 @@ from main import (
     save_postgres_assessment,
     settings,
     sync_local_assessments,
+    sync_local_nurses,
     sync_local_patients,
     ensure_patients_schema,
     psycopg,
     dict_row,
+    get_current_nurse,
 )
 from rule_engine import infer_triage
 
@@ -35,20 +38,36 @@ def row_to_response(row: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-def local_assessment_rows(limit: int, sync_status: str | None) -> list[dict[str, Any]]:
+def local_assessment_rows(
+    limit: int,
+    nurse_id: str,
+) -> list[dict[str, Any]]:
     ensure_local_schema()
-    query = "SELECT * FROM assessments"
-    parameters: tuple[Any, ...] = ()
-    if sync_status in {"pending_sync", "synced"}:
-        query += " WHERE sync_status = ?"
-        parameters = (sync_status,)
+    query = "SELECT * FROM assessments WHERE nurse_id = ?"
+    parameters: tuple[Any, ...] = (nurse_id,)
     query += " ORDER BY created_at DESC LIMIT ?"
     parameters += (limit,)
 
     with sqlite3.connect(LOCAL_DATABASE_PATH) as connection:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(query, parameters).fetchall()
-    return [row_to_response(dict(row)) for row in rows]
+    nurse_ids = {row["nurse_id"] for row in rows if row["nurse_id"]}
+    nurse_names: dict[str, str] = {}
+    if nurse_ids:
+        placeholders = ",".join("?" for _ in nurse_ids)
+        with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
+            nurse_names = dict(
+                connection.execute(
+                    f"SELECT id, name FROM nurses WHERE id IN ({placeholders})",
+                    tuple(nurse_ids),
+                ).fetchall()
+            )
+    assessments = []
+    for row in rows:
+        assessment = row_to_response(dict(row))
+        assessment["nurse_name"] = nurse_names.get(row["nurse_id"], "Unknown nurse")
+        assessments.append(assessment)
+    return assessments
 
 
 def postgres_assessment_rows(limit: int, sync_status: str | None) -> list[dict[str, Any]]:
@@ -68,16 +87,17 @@ def sync_assessment_to_postgres(
     request: AssessmentRequest,
     prediction: dict[str, Any],
     created_at: datetime,
+    nurse_id: str,
 ) -> None:
     try:
         if settings.database_url and psycopg is not None:
-            save_postgres_assessment(request, prediction, created_at)
+            save_postgres_assessment(request, prediction, created_at, nurse_id)
             mark_local_assessment_synced(request.id)
     except Exception:
         pass
 
 
-def process_assessment(request: AssessmentRequest) -> dict[str, Any]:
+def process_assessment(request: AssessmentRequest, nurse_id: str) -> dict[str, Any]:
     prediction = predict_assessment(request.symptoms, request.temperature)
     triage = infer_triage(
         age=request.age,
@@ -103,7 +123,7 @@ def process_assessment(request: AssessmentRequest) -> dict[str, Any]:
     }
     created_at = request.createdAt or datetime.now(timezone.utc)
     # Return the model result without waiting for a remote database connection.
-    save_local_assessment(request, prediction, created_at)
+    save_local_assessment(request, prediction, created_at, nurse_id)
     sync_status = "pending_sync"
     return {**request.model_dump(mode="json"), **prediction, "syncStatus": sync_status}
 
@@ -123,23 +143,28 @@ def triage_assessment(request: AssessmentRequest) -> dict[str, Any]:
 def create_assessment(
     request: AssessmentRequest,
     background_tasks: BackgroundTasks,
+    nurse: dict[str, str] = Depends(get_current_nurse),
 ) -> dict[str, Any]:
-    response = process_assessment(request)
+    response = process_assessment(request, nurse["id"])
     if response["syncStatus"] == "pending_sync":
         background_tasks.add_task(
             sync_assessment_to_postgres,
             request,
             response,
             request.createdAt or datetime.now(timezone.utc),
+            nurse["id"],
         )
     return response
 
 
 @router.post("/assessments/sync")
-def sync_assessments(request: AssessmentSyncRequest) -> dict[str, Any]:
-    synced = [process_assessment(assessment) for assessment in request.assessments]
+def sync_assessments(
+    request: AssessmentSyncRequest,
+    nurse: dict[str, str] = Depends(get_current_nurse),
+) -> dict[str, Any]:
+    synced = [process_assessment(assessment, nurse["id"]) for assessment in request.assessments]
     try:
-        sync_local_assessments()
+        sync_local_assessments(nurse["id"])
     except Exception:
         pass
     return {
@@ -151,16 +176,16 @@ def sync_assessments(request: AssessmentSyncRequest) -> dict[str, Any]:
 @router.get("/assessments")
 def list_assessments(
     limit: int = Query(default=100, ge=1, le=500),
-    sync_status: str | None = Query(default=None),
+    nurse: dict[str, str] = Depends(get_current_nurse),
 ) -> dict[str, Any]:
     # SQLite is the local source of truth. PostgreSQL sync is optional and
     # should not hide records from the local FastAPI database.
-    assessments = local_assessment_rows(limit, sync_status)
+    assessments = local_assessment_rows(limit, nurse["id"])
     return {"count": len(assessments), "assessments": assessments}
 
 
 @router.get("/sync/status")
-def sync_status() -> dict[str, Any]:
+def sync_status(_nurse: dict[str, str] = Depends(get_current_nurse)) -> dict[str, Any]:
     ensure_local_schema()
     ensure_patients_schema()
     with sqlite3.connect(LOCAL_DATABASE_PATH) as connection:
@@ -197,37 +222,50 @@ def sync_status() -> dict[str, Any]:
 
 
 @router.post("/sync/run")
-def run_sync() -> dict[str, int]:
+def run_sync(nurse: dict[str, str] = Depends(get_current_nurse)) -> dict[str, int]:
     """Upload pending SQLite records when PostgreSQL is available."""
     if not settings.database_url or psycopg is None:
-        return {"assessments": 0, "patients": 0}
+        return {"nurses": 0, "assessments": 0, "patients": 0}
 
     try:
-        assessments = sync_local_assessments()
+        nurses = sync_local_nurses()
+    except Exception:
+        nurses = 0
+
+    try:
+        assessments = sync_local_assessments(nurse["id"])
     except Exception:
         assessments = 0
 
     try:
-        patients = sync_local_patients()
+        patients = sync_local_patients(nurse["id"])
     except Exception:
         patients = 0
 
     return {
+        "nurses": nurses,
         "assessments": assessments,
         "patients": patients,
     }
 
 
 @router.get("/assessments/{assessment_id}")
-def get_assessment(assessment_id: str) -> dict[str, Any]:
+def get_assessment(assessment_id: str, nurse: dict[str, str] = Depends(get_current_nurse)) -> dict[str, Any]:
     ensure_local_schema()
     with sqlite3.connect(LOCAL_DATABASE_PATH) as connection:
         connection.row_factory = sqlite3.Row
         row = connection.execute(
-            "SELECT * FROM assessments WHERE id = ?", (assessment_id,)
+            "SELECT * FROM assessments WHERE id = ? AND nurse_id = ?",
+            (assessment_id, nurse["id"]),
         ).fetchone()
     if row is None:
         from fastapi import HTTPException
 
         raise HTTPException(status_code=404, detail="Assessment not found.")
-    return row_to_response(dict(row))
+    assessment = row_to_response(dict(row))
+    with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
+        nurse_row = connection.execute(
+            "SELECT name FROM nurses WHERE id = ?", (row["nurse_id"],)
+        ).fetchone()
+    assessment["nurse_name"] = nurse_row[0] if nurse_row else "Unknown nurse"
+    return assessment

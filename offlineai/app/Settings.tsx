@@ -13,7 +13,7 @@ export default function SettingsScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <ScrollView contentContainerStyle={tw`px-5 pb-8`} showsVerticalScrollIndicator={false}>
         <Navbar variant="hero" />
-        <Pressable onPress={() => router.back()} style={tw`mb-8 mt-3 flex-row items-center`}>
+        <Pressable onPress={() => router.replace("/Home")} style={tw`mb-8 mt-3 flex-row items-center`}>
           <Text style={tw`text-sm font-bold text-teal-700`}>Back</Text>
         </Pressable>
         <Text style={tw`text-xs font-bold tracking-widest text-teal-700`}>PREFERENCES</Text>

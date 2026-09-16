@@ -13,9 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import tw from "twrnc";
 
 import Navbar from "../Components/Navbar";
-import { createAssessment, getApiErrorMessage, listPatients, parseAssessment, type AssessmentResult, type PatientRecord } from "../services/api";
-import { inferOfflineTriage } from "../services/offlineTriage";
-import { saveOfflineAssessment } from "../services/offlineStorage";
+import { createAssessment, getApiErrorMessage, healthCheck, listPatients, parseAssessment, type PatientRecord } from "../services/api";
 import { useSyncStore } from "../stores/syncStore";
 
 export default function Assess() {
@@ -95,6 +93,7 @@ export default function Assess() {
     };
 
     try {
+      await healthCheck();
       const prediction = await createAssessment(assessmentRequest);
       void useSyncStore.getState().refresh();
 
@@ -134,47 +133,9 @@ export default function Assess() {
             : "[]",
 
           assessmentId: assessmentRequest.id,
-          offline: "false",
         },
       });
     } catch (error) {
-      if (isNetworkFailure(error)) {
-        const triage = inferOfflineTriage(assessmentRequest);
-        const offlineResult: AssessmentResult = {
-          ...assessmentRequest,
-          disease: "Triage assessment",
-          confidence: 0,
-          predictions: [],
-          recognizedSymptoms: [],
-          recommendation: triage.action,
-          modelVersion: "rule-engine-offline",
-          status: "offline_triage",
-          triage,
-          syncStatus: "pending_sync",
-        };
-        saveOfflineAssessment(assessmentRequest, offlineResult);
-        router.push({
-          pathname: "/Results",
-          params: {
-            name: assessmentRequest.patientName,
-            age: String(assessmentRequest.age),
-            symptoms: assessmentRequest.symptoms,
-            temperature: String(assessmentRequest.temperature),
-            bloodPressure: assessmentRequest.bloodPressure,
-            disease: offlineResult.disease,
-            confidence: "",
-            recommendation: offlineResult.recommendation,
-            modelVersion: offlineResult.modelVersion,
-            status: offlineResult.status,
-            predictions: "[]",
-            recognizedSymptoms: "[]",
-            triage: JSON.stringify(triage),
-            assessmentId: assessmentRequest.id,
-            offline: "true",
-          },
-        });
-        return;
-      }
       setValidationMessage(getApiErrorMessage(error));
     } finally {
       setIsSaving(false);
@@ -495,6 +456,3 @@ function getPatientAge(dateOfBirth: string): string {
   return String(Math.max(0, age));
 }
 
-function isNetworkFailure(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "response" in error && !(error as { response?: unknown }).response);
-}

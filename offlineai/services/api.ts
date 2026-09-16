@@ -16,16 +16,81 @@ function getApiUrl(): string {
 		return configuredUrl.replace(/\/$/, "");
 	}
 
+	if (Platform.OS === "android" && !Constants.isDevice) {
+		return "http://10.0.2.2:8000";
+	}
+
 	return `http://${host ?? "127.0.0.1"}:8000`;
 }
 
 export const apiUrl = getApiUrl();
+let accessToken: string | null = null;
+
+export function setApiAccessToken(token: string | null): void {
+	accessToken = token;
+}
 
 export const api = axios.create({
 	baseURL: apiUrl,
 	headers: { "Content-Type": "application/json" },
 	timeout: 15_000,
 });
+
+api.interceptors.request.use((config) => {
+	if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`;
+	return config;
+});
+
+export type Nurse = { id: string; email: string; name: string; role: "nurse" | "admin" };
+export type AuthResponse = { accessToken: string; nurse: Nurse };
+export type AuthCredentials = { email: string; name?: string; password: string };
+
+export async function login(credentials: Pick<AuthCredentials, "email" | "password">): Promise<AuthResponse> {
+	const response = await api.post<AuthResponse>("/api/auth/login", credentials);
+	return response.data;
+}
+
+export async function signup(credentials: AuthCredentials): Promise<AuthResponse> {
+	const response = await api.post<AuthResponse>("/api/auth/signup", credentials);
+	return response.data;
+}
+
+export async function createNurse(credentials: AuthCredentials): Promise<Nurse> {
+	const response = await api.post<Nurse>("/api/auth/nurses", credentials);
+	return response.data;
+}
+
+export type RegisteredNurse = Nurse & { created_at: string };
+
+export async function listNurses(): Promise<RegisteredNurse[]> {
+	const response = await api.get<RegisteredNurse[]>("/api/auth/nurses");
+	return response.data;
+}
+
+export async function listUnsyncedPatients(): Promise<PatientRecord[]> {
+	const response = await api.get<PatientRecord[]>("/api/auth/patients/unsynced");
+	return response.data;
+}
+
+export async function deleteNurse(id: string): Promise<void> {
+	await api.delete(`/api/auth/nurses/${encodeURIComponent(id)}`);
+}
+
+export async function logout(): Promise<void> {
+	await api.post("/api/auth/logout");
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+	await api.post("/api/auth/password/change", { currentPassword, newPassword });
+}
+
+export async function resetPassword(email: string, resetCode: string, newPassword: string): Promise<void> {
+	await api.post("/api/auth/password/reset", { email, resetCode, newPassword });
+}
+
+export async function requestPasswordReset(email: string): Promise<void> {
+	await api.post("/api/auth/password/request", { email });
+}
 
 export type AssessmentRequest = {
 	id: string;
@@ -87,6 +152,7 @@ export type AssessmentResult = AssessmentRequest & PredictionResult & {
 
 export type LocalAssessment = {
 	id: string;
+	nurse_name: string;
 	patient_name: string;
 	age: number;
 	temperature: number;
@@ -112,9 +178,11 @@ export type PatientRecord = NewPatient & {
 	id: string;
 	createdAt: string;
 	syncStatus: string;
+	registeredBy: string;
 };
 
 export type SyncStatus = {
+	nurses?: number;
 	total: number;
 	pending: number;
 	pendingAssessments: number;
@@ -202,10 +270,23 @@ export async function createPatient(patient: NewPatient): Promise<PatientRecord>
 		if (!(error instanceof AxiosError) || error.response || apiUrl === getApiFallbackUrl()) {
 			throw error;
 		}
-		const response = await api.post<PatientRecord>("/api/patients", patient, {
-			baseURL: getApiFallbackUrl(),
-		});
-		return response.data;
+		try {
+			const response = await api.post<PatientRecord>("/api/patients", patient, {
+				baseURL: getApiFallbackUrl(),
+			});
+			return response.data;
+		} catch (fallbackError) {
+			// A timeout can happen after FastAPI has committed the patient.
+			// Read back the id before reporting the request as failed.
+			if (patient.id) {
+				const records = await api.get<{ patients: PatientRecord[] }>("/api/patients", {
+					baseURL: getApiFallbackUrl(),
+				});
+				const created = records.data.patients.find((record) => record.id === patient.id);
+				if (created) return created;
+			}
+			throw fallbackError;
+		}
 	}
 }
 
@@ -229,8 +310,8 @@ export async function getSyncStatus(): Promise<SyncStatus> {
 	return response.data;
 }
 
-export async function syncPendingAssessments(): Promise<{ assessments: number; patients: number }> {
-	const response = await api.post<{ assessments: number; patients: number }>("/api/sync/run", undefined, {
+export async function syncPendingAssessments(): Promise<{ nurses: number; assessments: number; patients: number }> {
+	const response = await api.post<{ nurses: number; assessments: number; patients: number }>("/api/sync/run", undefined, {
 		timeout: 60_000,
 	});
 	return response.data;

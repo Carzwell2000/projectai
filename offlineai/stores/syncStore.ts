@@ -1,8 +1,7 @@
 import NetInfo from "@react-native-community/netinfo";
 import { AppState } from "react-native";
 import { create } from "zustand";
-import { createAssessment, getSyncStatus, syncPendingAssessments } from "../services/api";
-import { getPendingOfflineAssessments, removeOfflineAssessment } from "../services/offlineStorage";
+import { getSyncStatus, syncPendingAssessments } from "../services/api";
 
 type SyncStore = {
   pending: number;
@@ -33,14 +32,6 @@ export const useSyncStore = create<SyncStore>((set) => ({
   refresh: async () => {
     set({ isSyncing: false });
     try {
-      for (const queued of getPendingOfflineAssessments()) {
-        try {
-          await createAssessment(queued.payload);
-          removeOfflineAssessment(queued.id);
-        } catch {
-          break;
-        }
-      }
       const beforeSync = await getSyncStatus();
       set({
         pending: beforeSync.pending,
@@ -52,7 +43,7 @@ export const useSyncStore = create<SyncStore>((set) => ({
         isOnline: true,
       });
 
-      if (beforeSync.postgresConfigured && beforeSync.pending > 0) {
+      if (beforeSync.postgresConfigured) {
         set({ isSyncing: true });
         try {
           await syncPendingAssessments();
@@ -108,7 +99,7 @@ export const useSyncStore = create<SyncStore>((set) => ({
       });
       const retryInterval = setInterval(() => {
         void refresh();
-      }, 10_000);
+      }, 5_000);
 
       stopMonitoring = () => {
         isActive = false;

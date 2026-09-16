@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import json
 import hashlib
+import base64
+import hmac
 import re
 import sqlite3
 import sys
+import secrets
+import urllib.request
 from uuid import uuid4
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
@@ -21,8 +25,9 @@ import joblib
 import numpy as np
 import pandas as pd
 import shap
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -37,6 +42,8 @@ except ImportError:
 BACKEND_ROOT = Path(__file__).resolve().parent
 LOCAL_DATABASE_PATH = BACKEND_ROOT / "assessments.db"
 PATIENTS_DATABASE_PATH = BACKEND_ROOT / "patients.db"
+AUTH_DATABASE_PATH = BACKEND_ROOT / "nurses.db"
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 class SyncConflictError(RuntimeError):
@@ -46,6 +53,11 @@ class SyncConflictError(RuntimeError):
 class Settings(BaseSettings):
     database_url: str | None = Field(default=None, alias="DATABASE_URL")
     model_path: Path = Path(__file__).with_name("disease_model.joblib")
+    auth_secret: str = Field(default="change-this-auth-secret", alias="AUTH_SECRET")
+    admin_email: str | None = Field(default=None, alias="ADMIN_EMAIL")
+    admin_password: str | None = Field(default=None, alias="ADMIN_PASSWORD")
+    resend_api_key: str | None = Field(default=None, alias="RESEND_API_KEY")
+    resend_from_email: str = Field(default="onboarding@resend.dev", alias="RESEND_FROM_EMAIL")
 
     model_config = SettingsConfigDict(
         env_file=(BACKEND_ROOT / ".env.local", BACKEND_ROOT / ".env"),
@@ -66,6 +78,192 @@ feature_names: list[str] = artifact["feature_names"]
 disease_names: list[str] = artifact["disease_names"]
 all_symptoms: set[str] = set(artifact["all_symptoms"])
 MIN_PREDICTION_CONFIDENCE = 0.35
+
+
+class NurseSignupRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=200)
+    name: str = Field(min_length=2, max_length=120)
+    password: str = Field(min_length=8, max_length=200)
+
+
+class NurseLoginRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=200)
+    password: str = Field(min_length=8, max_length=200)
+
+
+class PasswordChangeRequest(BaseModel):
+    currentPassword: str = Field(min_length=8, max_length=200)
+    newPassword: str = Field(min_length=8, max_length=200)
+
+
+class PasswordResetRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=200)
+    resetCode: str = Field(min_length=1, max_length=200)
+    newPassword: str = Field(min_length=8, max_length=200)
+
+
+class PasswordResetRequestCode(BaseModel):
+    email: str = Field(min_length=3, max_length=200)
+
+
+def ensure_auth_schema() -> None:
+    with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS nurses (
+                id TEXT PRIMARY KEY NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'nurse'
+            )
+            """
+        )
+        try:
+            connection.execute("ALTER TABLE nurses ADD COLUMN role TEXT NOT NULL DEFAULT 'nurse'")
+        except sqlite3.OperationalError:
+            pass
+        if settings.admin_email and settings.admin_password:
+            connection.execute(
+                """
+                INSERT INTO nurses (id, email, name, password_hash, created_at, role)
+                VALUES (?, ?, ?, ?, ?, 'admin')
+                ON CONFLICT(email) DO UPDATE SET role = 'admin'
+                """,
+                (
+                    "admin",
+                    normalize_email(settings.admin_email),
+                    "Administrator",
+                    hash_password(settings.admin_password),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS revoked_tokens (
+                token_hash TEXT PRIMARY KEY NOT NULL,
+                revoked_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS password_reset_codes (
+                email TEXT PRIMARY KEY NOT NULL,
+                code_hash TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )
+            """
+        )
+
+
+def normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
+def hash_password(password: str, salt: bytes | None = None) -> str:
+    salt = salt or hashlib.sha256(uuid4().bytes).digest()[:16]
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 120_000)
+    return f"{salt.hex()}${digest.hex()}"
+
+
+def verify_password(password: str, encoded: str) -> bool:
+    try:
+        salt_hex, digest_hex = encoded.split("$", 1)
+        expected = hash_password(password, bytes.fromhex(salt_hex)).split("$", 1)[1]
+        return hmac.compare_digest(expected, digest_hex)
+    except (ValueError, TypeError):
+        return False
+
+
+def issue_access_token(nurse_id: str) -> str:
+    payload = {
+        "sub": nurse_id,
+        "exp": int((datetime.now(timezone.utc) + timedelta(days=30)).timestamp()),
+    }
+    encoded = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode().rstrip("=")
+    signature = hmac.new(settings.auth_secret.encode(), encoded.encode(), hashlib.sha256).hexdigest()
+    return f"{encoded}.{signature}"
+
+
+def revoke_access_token(token: str) -> None:
+    ensure_auth_schema()
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
+        connection.execute(
+            "INSERT OR REPLACE INTO revoked_tokens (token_hash, revoked_at) VALUES (?, ?)",
+            (token_hash, datetime.now(timezone.utc).isoformat()),
+        )
+
+
+def get_current_user_record(token: str, user_id: str) -> dict[str, str]:
+    ensure_auth_schema()
+    with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        revoked = connection.execute(
+            "SELECT 1 FROM revoked_tokens WHERE token_hash = ?",
+            (hashlib.sha256(token.encode()).hexdigest(),),
+        ).fetchone()
+        if revoked is not None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been signed out.")
+        user = connection.execute(
+            "SELECT id, email, name, role FROM nurses WHERE id = ?", (user_id,)
+        ).fetchone()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account not found.")
+    return dict(user)
+
+
+def get_current_account(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> dict[str, str]:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
+    try:
+        encoded, signature = credentials.credentials.split(".", 1)
+        expected_signature = hmac.new(settings.auth_secret.encode(), encoded.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected_signature):
+            raise ValueError
+        payload = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
+        if int(payload["exp"]) < int(datetime.now(timezone.utc).timestamp()):
+            raise ValueError
+        nurse_id = str(payload["sub"])
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token.")
+
+    return get_current_user_record(credentials.credentials, nurse_id)
+
+
+def get_current_nurse(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> dict[str, str]:
+    nurse = get_current_account(credentials)
+    if nurse["role"] != "nurse":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Nurse access required.")
+    return nurse
+
+
+def get_current_admin(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> dict[str, str]:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
+    try:
+        encoded, signature = credentials.credentials.split(".", 1)
+        expected_signature = hmac.new(settings.auth_secret.encode(), encoded.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected_signature):
+            raise ValueError
+        payload = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
+        if int(payload["exp"]) < int(datetime.now(timezone.utc).timestamp()):
+            raise ValueError
+        user_id = str(payload["sub"])
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token.")
+    admin = get_current_user_record(credentials.credentials, user_id)
+    if admin["role"] != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Administrator access required.")
+    return admin
 
 
 def normalize_text(value: str) -> str:
@@ -296,11 +494,25 @@ class PatientRequest(BaseModel):
     phone: str = Field(min_length=1, max_length=40)
     dateOfBirth: str = Field(min_length=1, max_length=40)
 
+    @field_validator("name", "phone", "dateOfBirth")
+    @classmethod
+    def trim_patient_fields(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone_digits(cls, value: str) -> str:
+        digit_count = len(re.sub(r"\D", "", value))
+        if digit_count < 10 or digit_count > 15:
+            raise ValueError("Phone number must contain between 10 and 15 digits.")
+        return value
+
 
 class PatientRecord(PatientRequest):
     id: str
     createdAt: datetime
     syncStatus: str = "pending_sync"
+    registeredBy: str = "Unknown nurse"
 
 
 def ensure_local_schema() -> None:
@@ -309,6 +521,7 @@ def ensure_local_schema() -> None:
             """
             CREATE TABLE IF NOT EXISTS assessments (
                 id TEXT PRIMARY KEY NOT NULL,
+                nurse_id TEXT,
                 patient_name TEXT NOT NULL,
                 age INTEGER NOT NULL,
                 temperature REAL NOT NULL,
@@ -337,6 +550,10 @@ def ensure_local_schema() -> None:
             """
         )
         connection.execute("DROP TABLE IF EXISTS patients")
+        try:
+            connection.execute("ALTER TABLE assessments ADD COLUMN nurse_id TEXT")
+        except sqlite3.OperationalError:
+            pass
 
 
 def ensure_patients_schema() -> None:
@@ -353,6 +570,10 @@ def ensure_patients_schema() -> None:
             )
             """
         )
+        try:
+            connection.execute("ALTER TABLE patients ADD COLUMN nurse_id TEXT")
+        except sqlite3.OperationalError:
+            pass
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS sync_conflicts (
@@ -372,6 +593,21 @@ def ensure_postgres_schema() -> None:
         raise RuntimeError("Database configuration or psycopg is unavailable.")
 
     with psycopg.connect(settings.database_url, connect_timeout=15) as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS nurses (
+                id TEXT PRIMARY KEY NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL,
+                role TEXT NOT NULL DEFAULT 'nurse'
+            )
+            """
+        )
+        connection.execute(
+            "ALTER TABLE nurses ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'nurse'"
+        )
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS assessments (
@@ -394,6 +630,7 @@ def ensure_postgres_schema() -> None:
         connection.execute(
             """
             ALTER TABLE assessments
+                ADD COLUMN IF NOT EXISTS nurse_id TEXT,
                 ADD COLUMN IF NOT EXISTS disease TEXT,
                 ADD COLUMN IF NOT EXISTS confidence DOUBLE PRECISION,
                 ADD COLUMN IF NOT EXISTS predictions JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -406,6 +643,7 @@ def ensure_postgres_schema() -> None:
             """
             CREATE TABLE IF NOT EXISTS patients (
                 id TEXT PRIMARY KEY NOT NULL,
+                nurse_id TEXT,
                 name TEXT NOT NULL,
                 phone TEXT NOT NULL,
                 date_of_birth TEXT NOT NULL,
@@ -436,16 +674,18 @@ def save_local_assessment(
     request: AssessmentRequest,
     prediction: dict[str, Any],
     created_at: datetime,
+    nurse_id: str,
 ) -> None:
     ensure_local_schema()
     with sqlite3.connect(LOCAL_DATABASE_PATH) as connection:
         connection.execute(
             """
             INSERT INTO assessments
-              (id, patient_name, age, temperature, blood_pressure, symptoms,
+                            (id, nurse_id, patient_name, age, temperature, blood_pressure, symptoms,
                     created_at, disease, confidence, predictions, recommendation, model_version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
+                            nurse_id = excluded.nurse_id,
               patient_name = excluded.patient_name,
               age = excluded.age,
               temperature = excluded.temperature,
@@ -460,6 +700,7 @@ def save_local_assessment(
             """,
             (
                 request.id,
+                nurse_id,
                 request.patientName,
                 request.age,
                 request.temperature,
@@ -495,6 +736,7 @@ def save_postgres_assessment(
     request: AssessmentRequest,
     prediction: dict[str, Any],
     created_at: datetime,
+    nurse_id: str,
     ensure_schema: bool = True,
 ) -> None:
     if ensure_schema: ensure_postgres_schema()
@@ -516,10 +758,11 @@ def save_postgres_assessment(
         inserted = connection.execute(
             """
             INSERT INTO assessments
-                  (id, patient_name, age, temperature, blood_pressure, symptoms,
+                                    (id, nurse_id, patient_name, age, temperature, blood_pressure, symptoms,
                     created_at, disease, confidence, predictions, recommendation, model_version)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
             ON CONFLICT (id) DO UPDATE SET
+                                nurse_id = EXCLUDED.nurse_id,
                 patient_name = EXCLUDED.patient_name,
                 age = EXCLUDED.age,
                 temperature = EXCLUDED.temperature,
@@ -535,6 +778,7 @@ def save_postgres_assessment(
             """,
             (
                 request.id,
+                nurse_id,
                 request.patientName,
                 request.age,
                 request.temperature,
@@ -552,7 +796,7 @@ def save_postgres_assessment(
             raise RuntimeError(f"Assessment {request.id} was not written to Neon.")
 
 
-def sync_local_assessments() -> int:
+def sync_local_assessments(nurse_id: str | None = None) -> int:
     if not settings.database_url or psycopg is None:
         return 0
 
@@ -560,9 +804,12 @@ def sync_local_assessments() -> int:
     ensure_postgres_schema()
     with sqlite3.connect(LOCAL_DATABASE_PATH) as connection:
         connection.row_factory = sqlite3.Row
-        rows = connection.execute(
-            "SELECT * FROM assessments WHERE sync_status = 'pending_sync' ORDER BY created_at"
-        ).fetchall()
+        query = "SELECT * FROM assessments WHERE sync_status = 'pending_sync'"
+        parameters: tuple[Any, ...] = ()
+        if nurse_id:
+            query += " AND nurse_id = ?"
+            parameters = (nurse_id,)
+        rows = connection.execute(query + " ORDER BY created_at", parameters).fetchall()
 
     synced = 0
     for row in rows:
@@ -583,7 +830,7 @@ def sync_local_assessments() -> int:
             "modelVersion": row["model_version"],
         }
         try:
-            save_postgres_assessment(request, prediction, request.createdAt, ensure_schema=False)
+            save_postgres_assessment(request, prediction, request.createdAt, row["nurse_id"] or nurse_id or "", ensure_schema=False)
             mark_local_assessment_synced(request.id)
             synced += 1
         except SyncConflictError:
@@ -593,24 +840,63 @@ def sync_local_assessments() -> int:
     return synced
 
 
-def save_local_patient(patient: PatientRecord) -> None:
+def sync_local_nurses(nurse_id: str | None = None) -> int:
+    if not settings.database_url or psycopg is None:
+        return 0
+
+    ensure_auth_schema()
+    ensure_postgres_schema()
+    with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        query = "SELECT * FROM nurses"
+        parameters: tuple[Any, ...] = ()
+        if nurse_id:
+            query += " WHERE id = ?"
+            parameters = (nurse_id,)
+        rows = connection.execute(query, parameters).fetchall()
+
+    with psycopg.connect(settings.database_url, connect_timeout=15) as connection:
+        for row in rows:
+            connection.execute(
+                """
+                INSERT INTO nurses (id, email, name, password_hash, created_at, role)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE SET
+                    email = EXCLUDED.email,
+                    name = EXCLUDED.name,
+                    password_hash = EXCLUDED.password_hash,
+                    role = EXCLUDED.role
+                """,
+                (
+                    row["id"],
+                    row["email"],
+                    row["name"],
+                    row["password_hash"],
+                    row["created_at"],
+                    row["role"],
+                ),
+            )
+    return len(rows)
+
+
+def save_local_patient(patient: PatientRecord, nurse_id: str) -> None:
     ensure_patients_schema()
     with sqlite3.connect(PATIENTS_DATABASE_PATH) as connection:
         connection.execute(
             """
-                        INSERT INTO patients (id, name, phone, date_of_birth, created_at, sync_status)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                        INSERT INTO patients (id, nurse_id, name, phone, date_of_birth, created_at, sync_status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               name = excluded.name,
               phone = excluded.phone,
               date_of_birth = excluded.date_of_birth,
                             sync_status = excluded.sync_status
             """,
-                        (patient.id, patient.name, patient.phone, patient.dateOfBirth, patient.createdAt.isoformat(), patient.syncStatus),
+                        (patient.id, nurse_id, patient.name, patient.phone, patient.dateOfBirth, patient.createdAt.isoformat(), patient.syncStatus),
         )
 
 
-def save_postgres_patient(patient: PatientRecord, ensure_schema: bool = True) -> None:
+def save_postgres_patient(patient: PatientRecord, nurse_id: str, ensure_schema: bool = True) -> None:
     if ensure_schema:
         ensure_postgres_schema()
     local_payload = {
@@ -623,9 +909,10 @@ def save_postgres_patient(patient: PatientRecord, ensure_schema: bool = True) ->
     with psycopg.connect(settings.database_url, connect_timeout=15) as connection:
         inserted = connection.execute(
             """
-            INSERT INTO patients (id, name, phone, date_of_birth, created_at)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO patients (id, nurse_id, name, phone, date_of_birth, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO UPDATE SET
+                nurse_id = EXCLUDED.nurse_id,
                 name = EXCLUDED.name,
                 phone = EXCLUDED.phone,
                 date_of_birth = EXCLUDED.date_of_birth,
@@ -634,6 +921,7 @@ def save_postgres_patient(patient: PatientRecord, ensure_schema: bool = True) ->
             """,
             (
                 patient.id,
+                nurse_id,
                 local_payload["name"],
                 local_payload["phone"],
                 local_payload["date_of_birth"],
@@ -660,7 +948,7 @@ def mark_local_patient_conflict(patient_id: str) -> None:
         )
 
 
-def sync_local_patients() -> int:
+def sync_local_patients(nurse_id: str | None = None) -> int:
     if not settings.database_url or psycopg is None:
         return 0
 
@@ -668,9 +956,12 @@ def sync_local_patients() -> int:
     ensure_postgres_schema()
     with sqlite3.connect(PATIENTS_DATABASE_PATH) as connection:
         connection.row_factory = sqlite3.Row
-        rows = connection.execute(
-            "SELECT * FROM patients WHERE sync_status = 'pending_sync' ORDER BY created_at"
-        ).fetchall()
+        query = "SELECT * FROM patients WHERE sync_status = 'pending_sync'"
+        parameters: tuple[Any, ...] = ()
+        if nurse_id:
+            query += " AND nurse_id = ?"
+            parameters = (nurse_id,)
+        rows = connection.execute(query + " ORDER BY created_at", parameters).fetchall()
 
     synced = 0
     for row in rows:
@@ -683,7 +974,7 @@ def sync_local_patients() -> int:
             syncStatus="pending_sync",
         )
         try:
-            save_postgres_patient(patient, ensure_schema=False)
+            save_postgres_patient(patient, row["nurse_id"] or nurse_id or "", ensure_schema=False)
             mark_local_patient_synced(patient.id)
             synced += 1
         except SyncConflictError:
@@ -693,24 +984,17 @@ def sync_local_patients() -> int:
     return synced
 
 
-def create_patient(request: PatientRequest) -> PatientRecord:
+def create_patient(request: PatientRequest, nurse_id: str, nurse_name: str = "Unknown nurse") -> PatientRecord:
     patient = PatientRecord(
         id=request.id or f"PT-{uuid4().hex[:10].upper()}",
         createdAt=datetime.now(timezone.utc),
         syncStatus="pending_sync",
+        registeredBy=nurse_name,
         **request.model_dump(exclude={"id"}),
     )
 
     # Save locally first so FastAPI can always serve the registration.
-    save_local_patient(patient)
-
-    if settings.database_url and psycopg is not None:
-        try:
-            save_postgres_patient(patient)
-            patient = patient.model_copy(update={"syncStatus": "synced"})
-            save_local_patient(patient)
-        except Exception:
-            pass
+    save_local_patient(patient, nurse_id)
 
     return patient
 
@@ -719,6 +1003,7 @@ def create_patient(request: PatientRequest) -> PatientRecord:
 async def lifespan(_: FastAPI):
     ensure_local_schema()
     ensure_patients_schema()
+    ensure_auth_schema()
     yield
 
 
@@ -741,11 +1026,13 @@ def root() -> dict[str, str]:
     }
 
 from routes.assessments import router as assessments_router
+from routes.auth import router as auth_router
 from routes.patients import router as patients_router
 from routes.prediction import router as prediction_router
 from routes.system import router as system_router
 
 app.include_router(system_router)
+app.include_router(auth_router)
 app.include_router(prediction_router)
 app.include_router(assessments_router)
 app.include_router(patients_router)

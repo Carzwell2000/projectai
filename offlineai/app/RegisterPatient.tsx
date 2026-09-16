@@ -23,7 +23,7 @@ export default function RegisterPatientScreen() {
         <Navbar variant="hero" />
       </View>
       <View style={tw`flex-1 justify-end`}>
-        <RegisterPatientForm onCancel={() => router.back()} onSave={handleSave} />
+        <RegisterPatientForm onCancel={() => router.replace("/RegisteredPatients")} onSave={handleSave} />
       </View>
     </SafeAreaView>
   );

@@ -7,7 +7,6 @@ import tw from "twrnc";
 import Navbar from "../Components/Navbar";
 import SymptomTrendChart, { SymptomTrendPoint } from "../Components/Analytics";
 import { getModelCatalog, type ModelCatalog } from "../services/api";
-import { getCachedModelCatalog, saveModelCatalog } from "../services/offlineStorage";
 
 const posthogSymptomTrend: SymptomTrendPoint[] = [
   { label: "Mon", value: 18 }, { label: "Tue", value: 24 }, { label: "Wed", value: 21 },
@@ -19,13 +18,8 @@ export default function AnalysisScreen() {
   const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
 
   useEffect(() => {
-    const cachedCatalog = getCachedModelCatalog();
-    if (cachedCatalog) setModelCatalog(cachedCatalog);
     getModelCatalog()
-      .then((catalog) => {
-        setModelCatalog(catalog);
-        saveModelCatalog(catalog);
-      })
+      .then(setModelCatalog)
       .catch(() => undefined);
   }, []);
 

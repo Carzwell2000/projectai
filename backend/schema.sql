@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS assessments (
   id TEXT PRIMARY KEY NOT NULL,
+  nurse_id TEXT NOT NULL,
   patient_name TEXT NOT NULL,
   age INTEGER NOT NULL,
   temperature DOUBLE PRECISION NOT NULL,
@@ -16,9 +17,23 @@ CREATE TABLE IF NOT EXISTS assessments (
 
 CREATE TABLE IF NOT EXISTS patients (
   id TEXT PRIMARY KEY NOT NULL,
+  nurse_id TEXT NOT NULL,
   name TEXT NOT NULL,
   phone TEXT NOT NULL,
   date_of_birth TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL,
   sync_status TEXT NOT NULL DEFAULT 'synced'
+);
+
+CREATE TABLE IF NOT EXISTS nurses (
+  id TEXT PRIMARY KEY NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS revoked_tokens (
+  token_hash TEXT PRIMARY KEY NOT NULL,
+  revoked_at TIMESTAMPTZ NOT NULL
 );

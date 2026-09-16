@@ -15,6 +15,7 @@ type Patient = {
   symptoms: string;
   bloodPressure: string;
   recommendations: string;
+  nurseName: string;
 };
 
 export default function Patientrecords() {
@@ -124,10 +125,11 @@ function assessmentToPatient(assessment: LocalAssessment): Patient {
     symptoms: assessment.symptoms,
     bloodPressure: assessment.blood_pressure,
     recommendations: assessment.recommendation || "Await assessment",
+    nurseName: assessment.nurse_name,
   };
 }
 
-const TABLE_WIDTH = 774;
+const TABLE_WIDTH = 894;
 
 const tableHeaders = [
   { label: "Patient name", width: 150 },
@@ -136,6 +138,7 @@ const tableHeaders = [
   { label: "Symptoms", width: 180 },
   { label: "BP", width: 100 },
   { label: "Recommendations", width: 170 },
+  { label: "Assessed by", width: 120 },
 ];
 
 function PatientRow({ patient, shaded }: { patient: Patient; shaded: boolean }) {
@@ -147,6 +150,7 @@ function PatientRow({ patient, shaded }: { patient: Patient; shaded: boolean }) 
       <Text style={[tw`px-3 py-4 text-xs text-slate-600`, { width: tableHeaders[3].width }]}>{patient.symptoms}</Text>
       <Text style={[tw`px-3 py-4 text-xs text-slate-600`, { width: tableHeaders[4].width }]}>{patient.bloodPressure}</Text>
       <Text style={[tw`px-3 py-4 text-xs font-semibold text-teal-700`, { width: tableHeaders[5].width }]}>{patient.recommendations}</Text>
+      <Text style={[tw`px-3 py-4 text-xs font-semibold text-slate-600`, { width: tableHeaders[6].width }]}>{patient.nurseName}</Text>
     </View>
   );
 }

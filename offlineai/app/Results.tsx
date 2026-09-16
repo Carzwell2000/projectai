@@ -9,7 +9,7 @@ import { explainAssessment, type AssessmentExplanation, type TriageRecommendatio
 
 export default function Results() {
   const router = useRouter();
-  const { name = "Patient", age = "", symptoms = "", temperature = "", bloodPressure = "", disease = "", confidence = "", recommendation = "", status = "", predictions = "[]", recognizedSymptoms = "[]", triage = "", offline = "false", error = "" } = useLocalSearchParams<{
+  const { name = "Patient", age = "", symptoms = "", temperature = "", bloodPressure = "", disease = "", confidence = "", recommendation = "", status = "", predictions = "[]", recognizedSymptoms = "[]", triage = "", error = "" } = useLocalSearchParams<{
     name: string;
     age: string;
     symptoms: string;
@@ -22,7 +22,6 @@ export default function Results() {
     predictions: string;
     recognizedSymptoms: string;
     triage: string;
-    offline: string;
     error: string;
   }>();
   const symptomText = Array.isArray(symptoms) ? symptoms.join(", ") : symptoms;
@@ -39,7 +38,7 @@ export default function Results() {
   const [explanationError, setExplanationError] = useState(false);
 
   useEffect(() => {
-    if (!diseaseText || offline === "true" || !symptomText || !temperature) return;
+    if (!diseaseText || !symptomText || !temperature) return;
 
     let isActive = true;
     setIsLoadingExplanation(true);
@@ -58,7 +57,7 @@ export default function Results() {
     return () => {
       isActive = false;
     };
-  }, [bloodPressure, diseaseText, offline, symptomText, temperature]);
+  }, [bloodPressure, diseaseText, symptomText, temperature]);
   return (
     <SafeAreaView style={tw`flex-1 bg-slate-50`}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -94,7 +93,7 @@ export default function Results() {
 
         {diseaseText ? (
           <>
-            {triageResult ? <TriageCard triage={triageResult} offline={offline === "true"} /> : null}
+            {triageResult ? <TriageCard triage={triageResult} /> : null}
             {modelSymptoms.length ? <ModelSymptoms symptoms={modelSymptoms} /> : null}
             <SymptomExplanation explanation={explanation} isLoading={isLoadingExplanation} hasError={explanationError} />
             <ResultCard
@@ -215,7 +214,7 @@ function SymptomExplanation({ explanation, isLoading, hasError }: { explanation:
   );
 }
 
-function TriageCard({ triage, offline }: { triage: TriageRecommendation; offline: boolean }) {
+function TriageCard({ triage }: { triage: TriageRecommendation }) {
   const color = triage.level === "emergency" ? "rose" : triage.level === "urgent" ? "amber" : "teal";
   return (
     <View style={tw`mt-6 rounded-2xl border border-${color}-200 bg-${color}-50 p-5`}>
@@ -226,7 +225,6 @@ function TriageCard({ triage, offline }: { triage: TriageRecommendation; offline
       <Text style={tw`mt-2 text-2xl font-bold capitalize text-slate-900`}>{triage.level}</Text>
       <Text style={tw`mt-2 text-sm leading-5 text-slate-700`}>{triage.action}</Text>
       <View style={tw`mt-3 rounded-xl bg-white/70 p-3`}><Text style={tw`text-xs leading-4 text-slate-600`}>{triage.rationale}</Text></View>
-      {offline ? <Text style={tw`mt-3 text-xs font-semibold text-sky-700`}>Offline rule engine. This encounter is queued for sync.</Text> : null}
     </View>
   );
 }
