@@ -4,6 +4,7 @@ import json
 import hashlib
 import base64
 import hmac
+import logging
 import re
 import sqlite3
 import sys
@@ -28,8 +29,10 @@ import shap
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 try:
     import psycopg
@@ -332,9 +335,7 @@ def predict_assessment(symptoms: str, temperature: float) -> dict[str, Any]:
     features = build_features(symptoms, temperature)
     probabilities = classifier.predict_proba(features)[0]
     ranked = np.argsort(probabilities)[::-1][:5]
-    top_confidence = float(probabilities[ranked[0]])
     recognized_symptoms = resolve_symptoms(symptoms)
-    has_sufficient_evidence = bool(recognized_symptoms) and top_confidence >= MIN_PREDICTION_CONFIDENCE
     predictions = [
         {
             "disease": disease_names[int(index)],
@@ -342,34 +343,30 @@ def predict_assessment(symptoms: str, temperature: float) -> dict[str, Any]:
         }
         for index in ranked
     ] if recognized_symptoms else []
-    primary = predictions[0] if predictions else {"disease": "Insufficient evidence", "confidence": 0.0}
-    recommendations = artifact.get("recommendations", {})
-    if has_sufficient_evidence:
-        recommendation = recommendations.get(
+
+    if not recognized_symptoms:
+        primary = {"disease": "Insufficient evidence", "confidence": 0.0}
+        recommendation = "No recognized symptom was matched. Capture a specific symptom and review the possibilities with a qualified healthcare professional."
+        status = "insufficient_evidence"
+        prediction_list: list[dict[str, Any]] = []
+    else:
+        primary = predictions[0]
+        top_confidence = float(primary["confidence"])
+        recommendation = artifact.get("recommendations", {}).get(
             primary["disease"],
             "Review this result with a qualified healthcare professional.",
         )
-    elif not recognized_symptoms:
-        recommendation = "No recognized symptom was matched. Capture a specific symptom and review the possibilities with a qualified healthcare professional."
-    else:
-        recommendation = recommendations.get(
-            primary["disease"],
-            "Review this possible match with a qualified healthcare professional.",
-        )
+        status = "prediction" if top_confidence >= MIN_PREDICTION_CONFIDENCE else "low_confidence"
+        prediction_list = predictions
+
     return {
         "disease": primary["disease"],
         "confidence": primary["confidence"],
-        "predictions": predictions,
+        "predictions": prediction_list,
         "recognizedSymptoms": recognized_symptoms,
         "recommendation": recommendation,
         "modelVersion": artifact.get("model_version", "unknown"),
-        "status": (
-            "prediction"
-            if has_sufficient_evidence
-            else "low_confidence"
-            if recognized_symptoms
-            else "insufficient_evidence"
-        ),
+        "status": status,
     }
 
 
@@ -402,32 +399,49 @@ def explain_assessment(symptoms: str, temperature: float, blood_pressure: str = 
         np.zeros((1, transformed_features.shape[0])),
     )
     shap_values = np.asarray(explainer.shap_values(transformed_features.reshape(1, -1)))
-    if shap_values.ndim == 3:
-        contributions = shap_values[0, :, predicted_index]
-    elif shap_values.ndim == 2 and shap_values.shape[0] == len(disease_names):
-        contributions = shap_values[predicted_index]
-    else:
-        contributions = shap_values.reshape(1, -1)[0]
-
     temperature_feature = artifact.get("temperature_feature", "patient_temperature")
     explanation_feature_indices = [
         index for index, feature in enumerate(feature_names)
         if feature in recognized_symptoms or feature == temperature_feature
     ]
-    ranked_features = sorted(
-        explanation_feature_indices,
-        key=lambda index: abs(contributions[index]),
-        reverse=True,
-    )[:10]
-    feature_contributions = [
+
+    def contributions_for(class_index: int) -> np.ndarray:
+        if shap_values.ndim == 3:
+            return shap_values[0, :, class_index]
+        if shap_values.ndim == 2 and shap_values.shape[0] == len(disease_names):
+            return shap_values[class_index]
+        return shap_values.reshape(1, -1)[0]
+
+    def features_for(contributions: np.ndarray) -> list[dict[str, Any]]:
+        ranked_features = sorted(
+            explanation_feature_indices,
+            key=lambda index: abs(contributions[index]),
+            reverse=True,
+        )[:10]
+        return [
+            {
+                "feature": feature_names[int(index)],
+                "contribution": round(float(contributions[index]), 6),
+                "direction": "supports" if contributions[index] >= 0 else "opposes",
+            }
+            for index in ranked_features
+            if contributions[index] != 0
+        ]
+
+    recommendations = artifact.get("recommendations", {})
+    predicted_diseases = [
         {
-            "feature": feature_names[int(index)],
-            "contribution": round(float(contributions[index]), 6),
-            "direction": "supports" if contributions[index] >= 0 else "opposes",
+            "disease": disease_names[int(index)],
+            "confidence": round(float(probabilities[index]), 4),
+            "recommendation": recommendations.get(
+                disease_names[int(index)],
+                "Review this possible match with a qualified healthcare professional.",
+            ),
+            "features": features_for(contributions_for(int(index))),
         }
-        for index in ranked_features
-        if contributions[index] != 0
-    ]
+        for index in np.argsort(probabilities)[::-1][:5]
+    ] if recognized_symptoms else []
+    feature_contributions = predicted_diseases[0]["features"] if predicted_diseases else []
 
     pressure_match = re.fullmatch(r"\s*(\d{2,3})\s*/\s*(\d{2,3})\s*", blood_pressure)
     systolic, diastolic = (int(pressure_match.group(1)), int(pressure_match.group(2))) if pressure_match else (None, None)
@@ -452,6 +466,7 @@ def explain_assessment(symptoms: str, temperature: float, blood_pressure: str = 
         "recognizedSymptoms": prediction["recognizedSymptoms"],
         "recommendation": prediction["recommendation"],
         "status": prediction["status"],
+        "predictedDiseases": predicted_diseases,
         "features": feature_contributions,
         "clinicalSignals": clinical_signals,
         "modelVersion": artifact.get("model_version", "unknown"),
@@ -462,15 +477,23 @@ class AssessmentRequest(BaseModel):
     id: str = Field(min_length=1, max_length=120)
     patientName: str = Field(min_length=2, max_length=200)
     age: int = Field(ge=0, le=130)
+    gender: str = Field(default="not_specified", min_length=1, max_length=40)
+    pregnant: bool | None = None
     temperature: float = Field(ge=25, le=45)
     bloodPressure: str = Field(pattern=r"^\d{2,3}/\d{2,3}$")
     symptoms: str = Field(min_length=2, max_length=4000)
     createdAt: datetime | None = None
 
-    @field_validator("patientName", "symptoms")
+    @field_validator("patientName", "gender", "symptoms")
     @classmethod
     def trim_text(cls, value: str) -> str:
         return value.strip()
+
+    @model_validator(mode="after")
+    def validate_pregnancy_status(self) -> "AssessmentRequest":
+        if self.pregnant is True and self.gender.lower() != "female":
+            raise ValueError("Pregnancy status is only available for female patients.")
+        return self
 
 
 class ExplanationRequest(BaseModel):
@@ -493,8 +516,11 @@ class PatientRequest(BaseModel):
     name: str = Field(min_length=2, max_length=200)
     phone: str = Field(min_length=1, max_length=40)
     dateOfBirth: str = Field(min_length=1, max_length=40)
+    gender: str = Field(default="not_specified", min_length=1, max_length=40)
+    email: str = Field(default="", max_length=254)
+    address: str = Field(default="", max_length=300)
 
-    @field_validator("name", "phone", "dateOfBirth")
+    @field_validator("name", "phone", "dateOfBirth", "gender", "email", "address")
     @classmethod
     def trim_patient_fields(cls, value: str) -> str:
         return value.strip()
@@ -506,6 +532,15 @@ class PatientRequest(BaseModel):
         if digit_count < 10 or digit_count > 15:
             raise ValueError("Phone number must contain between 10 and 15 digits.")
         return value
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        if not value:
+            return value
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value):
+            raise ValueError("Enter a valid email address.")
+        return value.lower()
 
 
 class PatientRecord(PatientRequest):
@@ -524,6 +559,8 @@ def ensure_local_schema() -> None:
                 nurse_id TEXT,
                 patient_name TEXT NOT NULL,
                 age INTEGER NOT NULL,
+                gender TEXT NOT NULL DEFAULT 'not_specified',
+                pregnant INTEGER,
                 temperature REAL NOT NULL,
                 blood_pressure TEXT NOT NULL,
                 symptoms TEXT NOT NULL,
@@ -550,10 +587,19 @@ def ensure_local_schema() -> None:
             """
         )
         connection.execute("DROP TABLE IF EXISTS patients")
-        try:
-            connection.execute("ALTER TABLE assessments ADD COLUMN nurse_id TEXT")
-        except sqlite3.OperationalError:
-            pass
+        for column, definition in (
+            ("nurse_id", "TEXT"),
+            ("gender", "TEXT NOT NULL DEFAULT 'not_specified'"),
+            ("pregnant", "INTEGER"),
+            ("sync_status", "TEXT NOT NULL DEFAULT 'pending_sync'"),
+        ):
+            try:
+                connection.execute(f"ALTER TABLE assessments ADD COLUMN {column} {definition}")
+            except sqlite3.OperationalError:
+                pass
+        connection.execute(
+            "UPDATE assessments SET sync_status = 'pending_sync' WHERE sync_status IS NULL OR sync_status = ''"
+        )
 
 
 def ensure_patients_schema() -> None:
@@ -565,6 +611,9 @@ def ensure_patients_schema() -> None:
                 name TEXT NOT NULL,
                 phone TEXT NOT NULL,
                 date_of_birth TEXT NOT NULL,
+                gender TEXT NOT NULL DEFAULT 'not_specified',
+                email TEXT NOT NULL DEFAULT '',
+                address TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 sync_status TEXT NOT NULL DEFAULT 'pending_sync'
             )
@@ -574,6 +623,11 @@ def ensure_patients_schema() -> None:
             connection.execute("ALTER TABLE patients ADD COLUMN nurse_id TEXT")
         except sqlite3.OperationalError:
             pass
+        for column, definition in (("gender", "TEXT NOT NULL DEFAULT 'not_specified'"), ("email", "TEXT NOT NULL DEFAULT ''"), ("address", "TEXT NOT NULL DEFAULT ''")):
+            try:
+                connection.execute(f"ALTER TABLE patients ADD COLUMN {column} {definition}")
+            except sqlite3.OperationalError:
+                pass
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS sync_conflicts (
@@ -614,6 +668,8 @@ def ensure_postgres_schema() -> None:
                 id TEXT PRIMARY KEY NOT NULL,
                 patient_name TEXT NOT NULL,
                 age INTEGER NOT NULL,
+                gender TEXT NOT NULL DEFAULT 'not_specified',
+                pregnant BOOLEAN,
                 temperature DOUBLE PRECISION NOT NULL,
                 blood_pressure TEXT NOT NULL,
                 symptoms TEXT NOT NULL,
@@ -631,6 +687,8 @@ def ensure_postgres_schema() -> None:
             """
             ALTER TABLE assessments
                 ADD COLUMN IF NOT EXISTS nurse_id TEXT,
+                ADD COLUMN IF NOT EXISTS gender TEXT NOT NULL DEFAULT 'not_specified',
+                ADD COLUMN IF NOT EXISTS pregnant BOOLEAN,
                 ADD COLUMN IF NOT EXISTS disease TEXT,
                 ADD COLUMN IF NOT EXISTS confidence DOUBLE PRECISION,
                 ADD COLUMN IF NOT EXISTS predictions JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -647,15 +705,22 @@ def ensure_postgres_schema() -> None:
                 name TEXT NOT NULL,
                 phone TEXT NOT NULL,
                 date_of_birth TEXT NOT NULL,
+                gender TEXT NOT NULL DEFAULT 'not_specified',
+                email TEXT NOT NULL DEFAULT '',
+                address TEXT NOT NULL DEFAULT '',
                 created_at TIMESTAMPTZ NOT NULL,
                 sync_status TEXT NOT NULL DEFAULT 'synced'
             )
             """
         )
         connection.execute("ALTER TABLE patients DROP COLUMN IF EXISTS condition")
+        connection.execute("ALTER TABLE patients ADD COLUMN IF NOT EXISTS nurse_id TEXT")
         connection.execute(
             "ALTER TABLE patients ADD COLUMN IF NOT EXISTS sync_status TEXT NOT NULL DEFAULT 'synced'"
         )
+        connection.execute("ALTER TABLE patients ADD COLUMN IF NOT EXISTS gender TEXT NOT NULL DEFAULT 'not_specified'")
+        connection.execute("ALTER TABLE patients ADD COLUMN IF NOT EXISTS email TEXT NOT NULL DEFAULT ''")
+        connection.execute("ALTER TABLE patients ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT ''")
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS sync_conflicts (
@@ -681,13 +746,15 @@ def save_local_assessment(
         connection.execute(
             """
             INSERT INTO assessments
-                            (id, nurse_id, patient_name, age, temperature, blood_pressure, symptoms,
-                    created_at, disease, confidence, predictions, recommendation, model_version)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (id, nurse_id, patient_name, age, gender, pregnant, temperature, blood_pressure, symptoms,
+                    created_at, disease, confidence, predictions, recommendation, model_version, sync_status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                             nurse_id = excluded.nurse_id,
               patient_name = excluded.patient_name,
               age = excluded.age,
+              gender = excluded.gender,
+              pregnant = excluded.pregnant,
               temperature = excluded.temperature,
               blood_pressure = excluded.blood_pressure,
               symptoms = excluded.symptoms,
@@ -696,13 +763,16 @@ def save_local_assessment(
               confidence = excluded.confidence,
               predictions = excluded.predictions,
               recommendation = excluded.recommendation,
-              model_version = excluded.model_version
+              model_version = excluded.model_version,
+              sync_status = 'pending_sync'
             """,
             (
                 request.id,
                 nurse_id,
                 request.patientName,
                 request.age,
+                request.gender,
+                request.pregnant,
                 request.temperature,
                 request.bloodPressure,
                 request.symptoms,
@@ -712,6 +782,7 @@ def save_local_assessment(
                 json.dumps(prediction["predictions"]),
                 prediction["recommendation"],
                 prediction["modelVersion"],
+                "pending_sync",
             ),
         )
 
@@ -739,11 +810,14 @@ def save_postgres_assessment(
     nurse_id: str,
     ensure_schema: bool = True,
 ) -> None:
-    if ensure_schema: ensure_postgres_schema()
+    if ensure_schema:
+        ensure_postgres_schema()
     local_payload = {
         "id": request.id,
         "patient_name": request.patientName,
         "age": request.age,
+        "gender": request.gender,
+        "pregnant": request.pregnant,
         "temperature": request.temperature,
         "blood_pressure": request.bloodPressure,
         "symptoms": request.symptoms,
@@ -758,13 +832,15 @@ def save_postgres_assessment(
         inserted = connection.execute(
             """
             INSERT INTO assessments
-                                    (id, nurse_id, patient_name, age, temperature, blood_pressure, symptoms,
-                    created_at, disease, confidence, predictions, recommendation, model_version)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
+                (id, nurse_id, patient_name, age, gender, pregnant, temperature, blood_pressure, symptoms,
+                 created_at, disease, confidence, predictions, recommendation, model_version, sync_status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s)
             ON CONFLICT (id) DO UPDATE SET
-                                nurse_id = EXCLUDED.nurse_id,
+                nurse_id = EXCLUDED.nurse_id,
                 patient_name = EXCLUDED.patient_name,
                 age = EXCLUDED.age,
+                gender = EXCLUDED.gender,
+                pregnant = EXCLUDED.pregnant,
                 temperature = EXCLUDED.temperature,
                 blood_pressure = EXCLUDED.blood_pressure,
                 symptoms = EXCLUDED.symptoms,
@@ -773,7 +849,8 @@ def save_postgres_assessment(
                 confidence = EXCLUDED.confidence,
                 predictions = EXCLUDED.predictions,
                 recommendation = EXCLUDED.recommendation,
-                model_version = EXCLUDED.model_version
+                model_version = EXCLUDED.model_version,
+                sync_status = 'synced'
             RETURNING id
             """,
             (
@@ -781,15 +858,18 @@ def save_postgres_assessment(
                 nurse_id,
                 request.patientName,
                 request.age,
+                request.gender,
+                request.pregnant,
                 request.temperature,
                 request.bloodPressure,
                 request.symptoms,
                 created_at,
                 prediction["disease"],
                 prediction["confidence"],
-                json.dumps(prediction["predictions"]),
+                json.dumps(prediction.get("predictions", [])),
                 prediction["recommendation"],
                 prediction["modelVersion"],
+                "synced",
             ),
         ).fetchone()
         if inserted is None:
@@ -804,7 +884,7 @@ def sync_local_assessments(nurse_id: str | None = None) -> int:
     ensure_postgres_schema()
     with sqlite3.connect(LOCAL_DATABASE_PATH) as connection:
         connection.row_factory = sqlite3.Row
-        query = "SELECT * FROM assessments WHERE sync_status = 'pending_sync'"
+        query = "SELECT * FROM assessments WHERE sync_status IN ('pending_sync', 'conflict')"
         parameters: tuple[Any, ...] = ()
         if nurse_id:
             query += " AND nurse_id = ?"
@@ -817,6 +897,8 @@ def sync_local_assessments(nurse_id: str | None = None) -> int:
             id=row["id"],
             patientName=row["patient_name"],
             age=row["age"],
+            gender=row["gender"],
+            pregnant=bool(row["pregnant"]) if row["pregnant"] is not None else None,
             temperature=row["temperature"],
             bloodPressure=row["blood_pressure"],
             symptoms=row["symptoms"],
@@ -836,6 +918,7 @@ def sync_local_assessments(nurse_id: str | None = None) -> int:
         except SyncConflictError:
             mark_local_assessment_conflict(request.id)
         except Exception:
+            logger.exception("Failed to sync assessment %s to PostgreSQL", request.id)
             continue
     return synced
 
@@ -884,15 +967,18 @@ def save_local_patient(patient: PatientRecord, nurse_id: str) -> None:
     with sqlite3.connect(PATIENTS_DATABASE_PATH) as connection:
         connection.execute(
             """
-                        INSERT INTO patients (id, nurse_id, name, phone, date_of_birth, created_at, sync_status)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                                                INSERT INTO patients (id, nurse_id, name, phone, date_of_birth, gender, email, address, created_at, sync_status)
+                                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               name = excluded.name,
               phone = excluded.phone,
               date_of_birth = excluded.date_of_birth,
+              gender = excluded.gender,
+                            email = excluded.email,
+                            address = excluded.address,
                             sync_status = excluded.sync_status
             """,
-                        (patient.id, nurse_id, patient.name, patient.phone, patient.dateOfBirth, patient.createdAt.isoformat(), patient.syncStatus),
+                                                (patient.id, nurse_id, patient.name, patient.phone, patient.dateOfBirth, patient.gender, patient.email, patient.address, patient.createdAt.isoformat(), patient.syncStatus),
         )
 
 
@@ -904,18 +990,24 @@ def save_postgres_patient(patient: PatientRecord, nurse_id: str, ensure_schema: 
         "name": patient.name,
         "phone": patient.phone,
         "date_of_birth": patient.dateOfBirth,
+        "gender": patient.gender,
+        "email": patient.email,
+        "address": patient.address,
         "created_at": patient.createdAt.isoformat(),
     }
     with psycopg.connect(settings.database_url, connect_timeout=15) as connection:
         inserted = connection.execute(
             """
-            INSERT INTO patients (id, nurse_id, name, phone, date_of_birth, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO patients (id, nurse_id, name, phone, date_of_birth, gender, email, address, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO UPDATE SET
                 nurse_id = EXCLUDED.nurse_id,
                 name = EXCLUDED.name,
                 phone = EXCLUDED.phone,
                 date_of_birth = EXCLUDED.date_of_birth,
+                gender = EXCLUDED.gender,
+                email = EXCLUDED.email,
+                address = EXCLUDED.address,
                 created_at = EXCLUDED.created_at
             RETURNING id
             """,
@@ -925,6 +1017,9 @@ def save_postgres_patient(patient: PatientRecord, nurse_id: str, ensure_schema: 
                 local_payload["name"],
                 local_payload["phone"],
                 local_payload["date_of_birth"],
+                local_payload["gender"],
+                local_payload["email"],
+                local_payload["address"],
                 patient.createdAt,
             ),
         ).fetchone()
@@ -970,6 +1065,9 @@ def sync_local_patients(nurse_id: str | None = None) -> int:
             name=row["name"],
             phone=row["phone"],
             dateOfBirth=row["date_of_birth"],
+            gender=row["gender"] if "gender" in row.keys() else "not_specified",
+            email=row["email"],
+            address=row["address"],
             createdAt=datetime.fromisoformat(row["created_at"]),
             syncStatus="pending_sync",
         )

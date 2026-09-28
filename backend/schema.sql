@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS patients (
   name TEXT NOT NULL,
   phone TEXT NOT NULL,
   date_of_birth TEXT NOT NULL,
+  email TEXT NOT NULL DEFAULT '',
+  address TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL,
   sync_status TEXT NOT NULL DEFAULT 'synced'
 );

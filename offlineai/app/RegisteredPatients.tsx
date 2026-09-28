@@ -1,46 +1,70 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import tw from "twrnc";
 import Navbar from "../Components/Navbar";
 import RegisterPatient, { type NewPatient } from "../Components/RegisterPatient";
-import { createPatient, getApiErrorMessage, listPatients, type PatientRecord } from "../services/api";
+import { createPatient, getApiErrorMessage, listPatients, updatePatient, type PatientRecord } from "../services/api";
 import { useSyncStore } from "../stores/syncStore";
 
 export default function RegisteredPatients() {
   const [patients, setPatients] = useState<PatientRecord[]>([]);
   const [search, setSearch] = useState("");
   const [isRegistering, setIsRegistering] = useState(false);
+  const [editingPatient, setEditingPatient] = useState<PatientRecord | null>(null);
   const [loadError, setLoadError] = useState("");
   const tableScrollRef = useRef<ScrollView>(null);
   const [tableOffset, setTableOffset] = useState(0);
+  const pendingPatients = useSyncStore((state) => state.pendingPatients);
+  const pending = useSyncStore((state) => state.pending);
   const visiblePatients = useMemo(
     () => patients.filter((patient) => `${patient.name} ${patient.id}`.toLowerCase().includes(search.toLowerCase())),
     [patients, search],
   );
 
+  const refreshPatients = useCallback(() => {
+    listPatients().then((records) => {
+      setPatients(records);
+      setLoadError("");
+    }).catch((error) => {
+      setLoadError(getApiErrorMessage(error));
+    });
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
-      listPatients().then((records) => {
-        if (!isActive) return;
-        setPatients(records);
-        setLoadError("");
-      }).catch((error) => {
-        if (isActive) setLoadError(getApiErrorMessage(error));
-      });
+      const load = async () => {
+        try {
+          const records = await listPatients();
+          if (!isActive) return;
+          setPatients(records);
+          setLoadError("");
+        } catch (error) {
+          if (!isActive) return;
+          setLoadError(getApiErrorMessage(error));
+        }
+      };
+      void load();
       return () => { isActive = false; };
     }, []),
   );
 
-  const registerPatient = async (patient: NewPatient) => {
-    const created = await createPatient(patient);
+  useEffect(() => {
+    void refreshPatients();
+  }, [pendingPatients, pending, refreshPatients]);
+
+  const savePatient = async (patient: NewPatient) => {
+    const saved = editingPatient ? await updatePatient(patient) : await createPatient(patient);
     void useSyncStore.getState().refresh();
-    setPatients((current) => [created, ...current]);
+    setPatients((current) => editingPatient
+      ? current.map((item) => item.id === saved.id ? saved : item)
+      : [saved, ...current]);
     setLoadError("");
     setIsRegistering(false);
+    setEditingPatient(null);
   };
 
   return (
@@ -52,7 +76,7 @@ export default function RegisteredPatients() {
             <Text style={tw`text-xs font-bold tracking-widest text-teal-700`}></Text>
             <Text style={tw`mt-2 text-3xl font-bold text-slate-900`}>Registered patients</Text>
           </View>
-          <Pressable accessibilityLabel="Register patient" onPress={() => setIsRegistering(true)} style={tw`h-11 w-11 items-center justify-center rounded-full bg-teal-600`}>
+          <Pressable accessibilityLabel="Register patient" onPress={() => { setEditingPatient(null); setIsRegistering(true); }} style={tw`h-11 w-11 items-center justify-center rounded-full bg-teal-600`}>
             <Ionicons name="person-add-outline" size={21} color="white" />
           </Pressable>
         </View>
@@ -117,7 +141,12 @@ export default function RegisteredPatients() {
               ))}
             </View>
             {visiblePatients.map((patient, index) => (
-              <PatientRow key={patient.id} patient={patient} shaded={index % 2 === 1} />
+              <PatientRow
+                key={patient.id}
+                patient={patient}
+                shaded={index % 2 === 1}
+                onEdit={() => { setEditingPatient(patient); setIsRegistering(true); }}
+              />
             ))}
             {visiblePatients.length === 0 ? (
               <Text style={tw`w-[820px] px-4 py-8 text-center text-sm text-slate-500`}>No registered patients found.</Text>
@@ -125,35 +154,59 @@ export default function RegisteredPatients() {
           </View>
         </ScrollView>
       </ScrollView>
-      <Modal animationType="slide" transparent visible={isRegistering} onRequestClose={() => setIsRegistering(false)}>
-        <View style={tw`flex-1 justify-end bg-slate-900/30`}>
-          <RegisterPatient onCancel={() => setIsRegistering(false)} onSave={registerPatient} />
-        </View>
+      <Modal animationType="slide" transparent visible={isRegistering} onRequestClose={() => { setIsRegistering(false); setEditingPatient(null); }}>
+        <KeyboardAvoidingView style={tw`flex-1 justify-end bg-slate-900/30`} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          {isRegistering ? (
+            <RegisterPatient
+              key={editingPatient?.id ?? "new-patient"}
+              initialPatient={editingPatient ?? undefined}
+              onCancel={() => { setIsRegistering(false); setEditingPatient(null); }}
+              onSave={savePatient}
+            />
+          ) : null}
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
 }
 
-const PATIENT_TABLE_WIDTH = 820;
+const PATIENT_TABLE_WIDTH = 1442;
 
 const patientTableHeaders = [
+  { label: "Edit", width: 72 },
   { label: "Patient name", width: 170 },
   { label: "Phone number", width: 155 },
+  { label: "Email", width: 220 },
+  { label: "Address", width: 220 },
   { label: "Date of birth", width: 145 },
+  { label: "Gender", width: 110 },
   { label: "Registered by", width: 120 },
   { label: "Status", width: 115 },
   { label: "Patient ID", width: 115 },
 ];
 
-function PatientRow({ patient, shaded }: { patient: PatientRecord; shaded: boolean }) {
+function PatientRow({ patient, shaded, onEdit }: { patient: PatientRecord; shaded: boolean; onEdit: () => void }) {
   return (
     <View style={[tw`flex-row border-b border-slate-100`, shaded && tw`bg-slate-50`]}>
-      <Text style={[tw`px-3 py-4 text-xs font-bold text-slate-800`, { width: patientTableHeaders[0].width }]}>{patient.name}</Text>
-      <Text style={[tw`px-3 py-4 text-xs text-slate-600`, { width: patientTableHeaders[1].width }]}>{patient.phone}</Text>
-      <Text style={[tw`px-3 py-4 text-xs text-slate-600`, { width: patientTableHeaders[2].width }]}>{patient.dateOfBirth}</Text>
-      <Text style={[tw`px-3 py-4 text-xs font-semibold text-slate-600`, { width: patientTableHeaders[3].width }]}>{patient.registeredBy}</Text>
-      <Text style={[tw`px-3 py-4 text-xs font-semibold text-teal-700`, { width: patientTableHeaders[4].width }]}>{patient.syncStatus}</Text>
-      <Text style={[tw`px-3 py-4 text-xs text-slate-400`, { width: patientTableHeaders[5].width }]}>{patient.id}</Text>
+      <View style={[tw`justify-center px-3 py-2`, { width: patientTableHeaders[0].width }]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Edit ${patient.name}`}
+          onPress={onEdit}
+          style={({ pressed }) => [tw`h-9 w-9 items-center justify-center rounded-lg bg-teal-50`, pressed && tw`opacity-60`]}
+        >
+          <Ionicons name="create-outline" size={19} color="#0F766E" />
+        </Pressable>
+      </View>
+      <Text style={[tw`px-3 py-4 text-xs font-bold text-slate-800`, { width: patientTableHeaders[1].width }]}>{patient.name}</Text>
+      <Text style={[tw`px-3 py-4 text-xs text-slate-600`, { width: patientTableHeaders[2].width }]}>{patient.phone}</Text>
+      <Text style={[tw`px-3 py-4 text-xs text-slate-600`, { width: patientTableHeaders[3].width }]}>{patient.email}</Text>
+      <Text style={[tw`px-3 py-4 text-xs text-slate-600`, { width: patientTableHeaders[4].width }]} numberOfLines={2}>{patient.address}</Text>
+      <Text style={[tw`px-3 py-4 text-xs text-slate-600`, { width: patientTableHeaders[5].width }]}>{patient.dateOfBirth}</Text>
+      <Text style={[tw`px-3 py-4 text-xs font-semibold capitalize text-slate-700`, { width: patientTableHeaders[6].width }]}>{patient.gender ?? "not_specified"}</Text>
+      <Text style={[tw`px-3 py-4 text-xs font-semibold text-slate-600`, { width: patientTableHeaders[7].width }]}>{patient.registeredBy}</Text>
+      <Text style={[tw`px-3 py-4 text-xs font-semibold text-teal-700`, { width: patientTableHeaders[8].width }]}>{patient.syncStatus}</Text>
+      <Text style={[tw`px-3 py-4 text-xs text-slate-400`, { width: patientTableHeaders[9].width }]}>{patient.id}</Text>
     </View>
   );
 }

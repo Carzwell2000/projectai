@@ -41,13 +41,33 @@ api.interceptors.request.use((config) => {
 	return config;
 });
 
+api.interceptors.response.use(
+	(response) => response,
+	(error: unknown) => {
+		if (!shouldRetryWithApiFallback(error) || !error.config) {
+			return Promise.reject(error);
+		}
+		return api.request({ ...error.config, baseURL: getApiFallbackUrl() });
+	},
+);
+
 export type Nurse = { id: string; email: string; name: string; role: "nurse" | "admin" };
 export type AuthResponse = { accessToken: string; nurse: Nurse };
 export type AuthCredentials = { email: string; name?: string; password: string };
 
 export async function login(credentials: Pick<AuthCredentials, "email" | "password">): Promise<AuthResponse> {
-	const response = await api.post<AuthResponse>("/api/auth/login", credentials);
-	return response.data;
+	try {
+		const response = await api.post<AuthResponse>("/api/auth/login", credentials);
+		return response.data;
+	} catch (error) {
+		if (!shouldRetryWithApiFallback(error)) {
+			throw error;
+		}
+		const response = await api.post<AuthResponse>("/api/auth/login", credentials, {
+			baseURL: getApiFallbackUrl(),
+		});
+		return response.data;
+	}
 }
 
 export async function signup(credentials: AuthCredentials): Promise<AuthResponse> {
@@ -96,6 +116,8 @@ export type AssessmentRequest = {
 	id: string;
 	patientName: string;
 	age: number;
+	gender: "Male" | "Female" | "Other";
+	pregnant: boolean | null;
 	temperature: number;
 	bloodPressure: string;
 	symptoms: string;
@@ -131,6 +153,16 @@ export type TriageRecommendation = {
 };
 
 export type AssessmentExplanation = PredictionResult & {
+	predictedDiseases: {
+		disease: string;
+		confidence: number;
+		recommendation: string;
+		features: {
+			feature: string;
+			contribution: number;
+			direction: "supports" | "opposes";
+		}[];
+	}[];
 	features: {
 		feature: string;
 		contribution: number;
@@ -172,6 +204,9 @@ export type NewPatient = {
 	name: string;
 	phone: string;
 	dateOfBirth: string;
+	gender: "female" | "male" | "intersex" | "other" | "prefer_not_to_say";
+	email: string;
+	address: string;
 };
 
 export type PatientRecord = NewPatient & {
@@ -195,10 +230,23 @@ export type SyncStatus = {
 const assessmentSchema = z.object({
 	patientName: z.string().trim().min(2, "Patient name must be at least 2 characters."),
 	age: z.coerce.number().int().min(0).max(130),
+	gender: z.enum(["Male", "Female", "Other"], {
+		message: "Select a gender option.",
+	}),
+	pregnant: z.enum(["yes", "no", "not_applicable"], {
+		message: "Select a pregnancy status.",
+	}),
 	temperature: z.coerce.number().min(25).max(45),
 	bloodPressure: z.string().regex(/^\d{2,3}\/\d{2,3}$/, "Use blood pressure format 120/80."),
 	symptoms: z.string().trim().min(2, "Enter at least one symptom."),
-});
+}).superRefine((data, context) => {
+	if (data.gender !== "Female" && data.pregnant === "yes") {
+		context.addIssue({ code: z.ZodIssueCode.custom, path: ["pregnant"], message: "Pregnancy status is only available for female patients." });
+	}
+}).transform((data) => ({
+	...data,
+	pregnant: data.pregnant === "yes" ? true : data.pregnant === "no" ? false : null,
+}));
 
 export function parseAssessment(input: Record<string, string>) {
 	return assessmentSchema.safeParse(input);
@@ -209,7 +257,7 @@ export async function createAssessment(request: AssessmentRequest): Promise<Asse
 		const response = await api.post<AssessmentResult>("/api/assessments", request);
 		return response.data;
 	} catch (error) {
-		if (!(error instanceof AxiosError) || error.response || apiUrl === getApiFallbackUrl()) {
+		if (!shouldRetryWithApiFallback(error)) {
 			throw error;
 		}
 		const response = await api.post<AssessmentResult>("/api/assessments", request, {
@@ -225,6 +273,12 @@ function getApiFallbackUrl(): string {
 	return `http://127.0.0.1:8000`;
 }
 
+function shouldRetryWithApiFallback(error: unknown): error is AxiosError {
+	if (!(error instanceof AxiosError) || error.response || !error.config) return false;
+	const fallbackUrl = getApiFallbackUrl();
+	return apiUrl !== fallbackUrl && error.config.baseURL !== fallbackUrl;
+}
+
 export async function predictAssessment(input: Pick<AssessmentRequest, "temperature" | "symptoms">): Promise<PredictionResult> {
 	const response = await api.post<PredictionResult>("/api/predict", input);
 	return response.data;
@@ -235,7 +289,7 @@ export async function explainAssessment(input: Pick<AssessmentRequest, "temperat
 		const response = await api.post<AssessmentExplanation>("/api/explain", input);
 		return response.data;
 	} catch (error) {
-		if (!(error instanceof AxiosError) || error.response || apiUrl === getApiFallbackUrl()) {
+		if (!shouldRetryWithApiFallback(error)) {
 			throw error;
 		}
 		const response = await api.post<AssessmentExplanation>("/api/explain", input, {
@@ -267,7 +321,16 @@ export async function createPatient(patient: NewPatient): Promise<PatientRecord>
 		const response = await api.post<PatientRecord>("/api/patients", patient);
 		return response.data;
 	} catch (error) { 
-		if (!(error instanceof AxiosError) || error.response || apiUrl === getApiFallbackUrl()) {
+		if (!shouldRetryWithApiFallback(error)) {
+			if (error instanceof AxiosError && !error.response && patient.id) {
+				try {
+					const records = await api.get<{ patients: PatientRecord[] }>("/api/patients", {
+						baseURL: getApiFallbackUrl(),
+					});
+					const created = records.data.patients.find((record) => record.id === patient.id);
+					if (created) return created;
+				} catch {}
+			}
 			throw error;
 		}
 		try {
@@ -290,12 +353,28 @@ export async function createPatient(patient: NewPatient): Promise<PatientRecord>
 	}
 }
 
+export async function updatePatient(patient: NewPatient): Promise<PatientRecord> {
+	if (!patient.id) throw new Error("Patient ID is required to update a record.");
+	try {
+		const response = await api.put<PatientRecord>(`/api/patients/${encodeURIComponent(patient.id)}`, patient);
+		return response.data;
+	} catch (error) {
+		if (!shouldRetryWithApiFallback(error)) {
+			throw error;
+		}
+		const response = await api.put<PatientRecord>(`/api/patients/${encodeURIComponent(patient.id)}`, patient, {
+			baseURL: getApiFallbackUrl(),
+		});
+		return response.data;
+	}
+}
+
 export async function listPatients(): Promise<PatientRecord[]> {
 	try {
 		const response = await api.get<{ patients: PatientRecord[] }>("/api/patients");
 		return response.data.patients;
 	} catch (error) {
-		if (!(error instanceof AxiosError) || error.response || apiUrl === getApiFallbackUrl()) {
+		if (!shouldRetryWithApiFallback(error)) {
 			throw error;
 		}
 		const response = await api.get<{ patients: PatientRecord[] }>("/api/patients", {
@@ -325,8 +404,18 @@ export async function syncAssessments(assessments: AssessmentRequest[]): Promise
 }
 
 export async function healthCheck(): Promise<{ status: string }> {
-	const response = await api.get<{ status: string }>("/health");
-	return response.data;
+	try {
+		const response = await api.get<{ status: string }>("/health");
+		return response.data;
+	} catch (error) {
+		if (!shouldRetryWithApiFallback(error)) {
+			throw error;
+		}
+		const response = await api.get<{ status: string }>("/health", {
+			baseURL: getApiFallbackUrl(),
+		});
+		return response.data;
+	}
 }
 
 export function getApiErrorMessage(error: unknown): string {

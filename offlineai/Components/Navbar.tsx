@@ -8,25 +8,29 @@ import { useSyncStore } from "../stores/syncStore";
 
 type NavbarProps = {
 	variant?: "default" | "hero";
+	monitorSync?: boolean;
+	showSyncStatus?: boolean;
 };
 
-export default function Navbar({ variant = "default" }: NavbarProps) {
+export default function Navbar({ variant = "default", monitorSync = true, showSyncStatus = true }: NavbarProps) {
 	const router = useRouter();
 	const nurseName = useAuthStore((state) => state.session?.nurse.name);
 	const logout = useAuthStore((state) => state.logout);
 	const [isMenuOpen, setIsMenuOpen] = useState(false);
-	const pendingSyncCount = useSyncStore((state) => state.pendingSyncCount);
-	const pendingAssessments = useSyncStore((state) => state.pendingAssessments);
-	const pendingPatients = useSyncStore((state) => state.pendingPatients);
-	const conflicts = useSyncStore((state) => state.conflicts);
-	const isSyncing = useSyncStore((state) => state.isSyncing);
-	const isBackendConfigured = useSyncStore((state) => state.isBackendConfigured);
-	const isOnline = useSyncStore((state) => state.isOnline);
+	const pendingSyncCount = useSyncStore((state) => monitorSync ? state.pendingSyncCount : 0);
+	const pendingAssessments = useSyncStore((state) => monitorSync ? state.pendingAssessments : 0);
+	const pendingPatients = useSyncStore((state) => monitorSync ? state.pendingPatients : 0);
+	const conflicts = useSyncStore((state) => monitorSync ? state.conflicts : 0);
+	const isSyncing = useSyncStore((state) => monitorSync ? state.isSyncing : false);
+	const isBackendConfigured = useSyncStore((state) => monitorSync ? state.isBackendConfigured : false);
+	const isOnline = useSyncStore((state) => monitorSync ? state.isOnline : false);
+	const syncError = useSyncStore((state) => monitorSync ? state.syncError : null);
 	const isConnected = isOnline && isBackendConfigured;
 
 	useEffect(() => {
+		if (!monitorSync) return;
 		return useSyncStore.getState().startMonitoring();
-	}, []);
+	}, [monitorSync]);
 
 	const openScreen = (screen: "/Analysis" | "/Settings" | "/RegisteredPatients" | "/ChangePassword") => {
 		setIsMenuOpen(false);
@@ -42,21 +46,25 @@ export default function Navbar({ variant = "default" }: NavbarProps) {
 		<>
 			{variant === "hero" ? (
 				<View style={tw`bg-sky-500 px-5 pb-8 pt-2`}>
-					<View style={tw`mb-6 flex-row items-center rounded-full bg-yellow-300 px-4 py-3`}>
-						<View style={tw`h-7 w-7 items-center justify-center rounded-full bg-sky-100`}><Ionicons name={isConnected ? "cloud-done-outline" : "cloud-offline-outline"} size={17} color="#1671B8" /></View>
-						<View style={tw`ml-3 flex-1 flex-row items-center justify-end`}>
-							<Text numberOfLines={1} style={tw`mr-3 shrink text-xs font-bold text-slate-800`}>
-								{nurseName ?? "Nurse"}
-							</Text>
-							<Text numberOfLines={1} style={tw`shrink text-right text-xs font-medium text-slate-700`}>
-								{isSyncing
-									? "Syncing records..."
-									: pendingSyncCount > 0
-									? `${pendingAssessments} assessments · ${pendingPatients} patients${conflicts ? ` · ${conflicts} conflicts` : ""}`
-									: "All records synced"}
-							</Text>
+					{showSyncStatus ? (
+						<View style={tw`mb-6 flex-row items-center rounded-full bg-yellow-300 px-4 py-3`}>
+							<View style={tw`h-7 w-7 items-center justify-center rounded-full bg-sky-100`}><Ionicons name={isConnected ? "cloud-done-outline" : "cloud-offline-outline"} size={17} color="#1671B8" /></View>
+							<View style={tw`ml-3 flex-1 flex-row items-center justify-end`}>
+								<Text numberOfLines={1} style={tw`mr-3 shrink text-xs font-bold text-slate-800`}>
+									{nurseName ?? "Nurse"}
+								</Text>
+								<Text numberOfLines={2} style={tw`shrink text-right text-xs font-medium text-slate-700`}>
+									{isSyncing
+										? "Syncing records..."
+									: syncError
+									? syncError
+										: pendingSyncCount > 0
+										? `${pendingAssessments} assessments · ${pendingPatients} patients${conflicts ? ` · ${conflicts} conflicts` : ""}`
+										: "All records synced"}
+								</Text>
+							</View>
 						</View>
-					</View>
+					) : null}
 					<View style={tw`flex-row items-start justify-between`}>
 						<View>
 							<Text style={tw`text-4xl font-bold text-white`}>AI Health</Text>

@@ -4,7 +4,8 @@ joblib
 scikit-learn
 numpy
 pandas
+openpyxl
+xlrd
 psycopg[binary]
 pydantic-settings
 shap
-xgboost

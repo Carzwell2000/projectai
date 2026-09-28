@@ -33,6 +33,7 @@ def infer_triage(
     temperature: float,
     blood_pressure: str,
     symptoms: str,
+    pregnant: bool | None = False,
 ) -> TriageRecommendation:
     """Apply conservative, explainable first-contact triage rules.
 
@@ -68,6 +69,31 @@ def infer_triage(
         if systolic < 90 or diastolic < 60:
             emergency_rules.append("low blood pressure")
 
+    urgent_rules: list[str] = []
+    if pregnant:
+        pregnancy_emergency_flags = {
+            "vaginal bleeding": "pregnancy bleeding",
+            "heavy vaginal bleeding": "heavy pregnancy bleeding",
+            "severe abdominal pain": "severe pregnancy abdominal pain",
+            "severe headache": "severe pregnancy headache",
+            "blurred vision": "pregnancy visual change",
+            "loss of vision": "pregnancy visual change",
+            "convulsion": "pregnancy convulsion",
+            "seizure": "pregnancy convulsion",
+            "fluid leaking": "possible rupture of membranes",
+            "water breaking": "possible rupture of membranes",
+            "reduced fetal movement": "reduced fetal movement",
+            "baby not moving": "reduced fetal movement",
+        }
+        for phrase, rule_name in pregnancy_emergency_flags.items():
+            if phrase in normalized and rule_name not in emergency_rules:
+                emergency_rules.append(rule_name)
+        if systolic is not None and diastolic is not None:
+            if systolic >= 160 or diastolic >= 110:
+                emergency_rules.append("severe pregnancy hypertension")
+            elif systolic >= 140 or diastolic >= 90:
+                urgent_rules.append("pregnancy hypertension")
+
     if emergency_rules:
         return TriageRecommendation(
             level="emergency",
@@ -76,7 +102,6 @@ def infer_triage(
             rules=tuple(emergency_rules),
         )
 
-    urgent_rules: list[str] = []
     if temperature >= 38.5:
         urgent_rules.append("high fever")
     if age < 5 or age >= 65:
@@ -84,6 +109,18 @@ def infer_triage(
     for phrase in ("persistent vomiting", "severe dehydration", "unable to eat"):
         if phrase in normalized:
             urgent_rules.append(phrase)
+    if pregnant:
+        if temperature >= 38:
+            urgent_rules.append("fever during pregnancy")
+        for phrase, rule_name in (
+            ("persistent vomiting", "persistent vomiting during pregnancy"),
+            ("fainting", "fainting during pregnancy"),
+            ("dizziness", "dizziness during pregnancy"),
+            ("shortness of breath", "breathing difficulty during pregnancy"),
+            ("breathlessness", "breathing difficulty during pregnancy"),
+        ):
+            if phrase in normalized and rule_name not in urgent_rules:
+                urgent_rules.append(rule_name)
 
     if urgent_rules:
         return TriageRecommendation(

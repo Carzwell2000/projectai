@@ -1,6 +1,6 @@
 import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
-import { Pressable, ScrollView, Text, TextInput } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import tw from "twrnc";
 import Navbar from "../Components/Navbar";
@@ -31,7 +31,8 @@ export default function ChangePassword() {
   return (
     <SafeAreaView style={tw`flex-1 bg-slate-50`}>
       <Stack.Screen options={{ headerShown: false }} />
-      <ScrollView contentContainerStyle={tw`px-5 pb-8`}>
+      <KeyboardAvoidingView style={tw`flex-1`} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={tw`px-5 pb-8`}>
         <Navbar variant="hero" />
         <Pressable onPress={() => router.replace("/Home")} style={tw`mb-8 mt-3`}>
           <Text style={tw`font-bold text-teal-700`}>Back</Text>
@@ -45,6 +46,7 @@ export default function ChangePassword() {
           <Text style={tw`font-bold text-white`}>Update password</Text>
         </Pressable>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

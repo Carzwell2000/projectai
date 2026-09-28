@@ -2,7 +2,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -22,9 +24,12 @@ export default function Assess() {
   const [patients, setPatients] = useState<PatientRecord[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null);
   const [isPatientPickerOpen, setIsPatientPickerOpen] = useState(false);
+  const [isGenderPickerOpen, setIsGenderPickerOpen] = useState(false);
   const [isLoadingPatients, setIsLoadingPatients] = useState(true);
   const [patientName, setPatientName] = useState("");
   const [age, setAge] = useState("");
+  const [gender, setGender] = useState("");
+  const [pregnant, setPregnant] = useState("");
   const [temperature, setTemperature] = useState("");
   const [bloodPressure, setBloodPressure] = useState("");
   const [symptomsText, setSymptomsText] = useState("");
@@ -54,11 +59,16 @@ export default function Assess() {
   );
 
   const selectPatient = (patient: PatientRecord) => {
+    const assessmentGender = getAssessmentGender(patient.gender);
     setSelectedPatient(patient);
     setPatientName(patient.name);
     setAge(getPatientAge(patient.dateOfBirth));
+    setGender(assessmentGender);
+    setPregnant(assessmentGender === "Female" ? "" : "not_applicable");
     setIsPatientPickerOpen(false);
-    setValidationMessage("");
+    setValidationMessage(assessmentGender
+      ? ""
+      : "This patient has no assessment-compatible registered gender. Please verify the record or select a gender.");
   };
 
   const submitAssessment = async () => {
@@ -69,9 +79,18 @@ export default function Assess() {
       return;
     }
 
+    const registeredGender = getAssessmentGender(selectedPatient.gender);
+    if (registeredGender && gender !== registeredGender) {
+      setGender(registeredGender);
+      setValidationMessage("Assessment gender must match the selected patient's registered gender.");
+      return;
+    }
+
     const parsedAssessment = parseAssessment({
       patientName,
       age,
+      gender,
+      pregnant,
       temperature,
       bloodPressure,
       symptoms: symptomsText,
@@ -88,6 +107,7 @@ export default function Assess() {
     setIsSaving(true);
     const assessmentRequest = {
       ...parsedAssessment.data,
+      pregnant: parsedAssessment.data.pregnant ?? null,
       id: `assessment-${Date.now()}`,
       createdAt: new Date().toISOString(),
     };
@@ -144,7 +164,9 @@ export default function Assess() {
 
   return (
     <SafeAreaView style={tw`flex-1 bg-[#F4F8F9}`}>
+      <KeyboardAvoidingView style={tw`flex-1`} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={tw`px-5 pb-8`}
         showsVerticalScrollIndicator={false}
       >
@@ -238,6 +260,40 @@ export default function Assess() {
               </View>
             </View>
           </View>
+
+          <Text style={tw`mb-2 mt-4 text-xs font-semibold text-slate-500`}>Gender</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={getAssessmentGender(selectedPatient?.gender) ? "Gender from registered patient" : "Select gender"}
+            accessibilityState={{ disabled: Boolean(getAssessmentGender(selectedPatient?.gender)) }}
+            disabled={Boolean(getAssessmentGender(selectedPatient?.gender))}
+            onPress={() => setIsGenderPickerOpen(true)}
+            style={tw`flex-row items-center justify-between rounded-xl border border-slate-200 px-4 py-3 ${getAssessmentGender(selectedPatient?.gender) ? "bg-slate-50" : "bg-white"}`}
+          >
+            <Text style={tw`text-sm ${gender ? "font-semibold text-slate-900" : "text-slate-400"}`}>
+              {gender || "Select gender"}
+            </Text>
+            <Ionicons name="chevron-down" size={18} color="#64748B" />
+          </Pressable>
+
+          {gender === "Female" ? (
+            <>
+              <Text style={tw`mb-2 mt-4 text-xs font-semibold text-slate-500`}>Pregnancy status</Text>
+              <View style={tw`flex-row flex-wrap gap-2`}>
+                {[["yes", "Yes"], ["no", "No"]].map(([value, label]) => (
+                  <Pressable
+                    key={value}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: pregnant === value }}
+                    onPress={() => { setPregnant(value); setValidationMessage(""); }}
+                    style={tw`rounded-xl border px-3 py-2 ${pregnant === value ? "border-teal-700 bg-teal-50" : "border-slate-200 bg-white"}`}
+                  >
+                    <Text style={tw`text-xs font-semibold ${pregnant === value ? "text-teal-800" : "text-slate-600"}`}>{label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          ) : null}
         </View>
 
         {/* Symptoms */}
@@ -390,6 +446,7 @@ export default function Assess() {
           </Pressable>
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
 
       <Modal
         animationType="slide"
@@ -437,6 +494,36 @@ export default function Assess() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={isGenderPickerOpen}
+        onRequestClose={() => setIsGenderPickerOpen(false)}
+      >
+        <Pressable style={tw`flex-1 items-center justify-center bg-slate-900/30 px-6`} onPress={() => setIsGenderPickerOpen(false)}>
+          <Pressable style={tw`w-full rounded-2xl bg-white p-5`} onPress={(event) => event.stopPropagation()}>
+            <Text style={tw`mb-3 text-lg font-bold text-slate-900`}>Select gender</Text>
+            {["Male", "Female", "Other"].map((value) => (
+              <Pressable
+                key={value}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: gender === value }}
+                onPress={() => {
+                  setGender(value);
+                  if (value !== "Female") setPregnant("not_applicable");
+                  setValidationMessage("");
+                  setIsGenderPickerOpen(false);
+                }}
+                style={tw`flex-row items-center justify-between border-b border-slate-100 py-4`}
+              >
+                <Text style={tw`text-base font-medium text-slate-800`}>{value}</Text>
+                {gender === value ? <Ionicons name="checkmark" size={20} color="#0F766E" /> : null}
+              </Pressable>
+            ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -454,5 +541,19 @@ function getPatientAge(dateOfBirth: string): string {
     || (today.getMonth() === date.getMonth() && today.getDate() < date.getDate());
   if (birthdayHasNotPassed) age -= 1;
   return String(Math.max(0, age));
+}
+
+function getAssessmentGender(gender: string | undefined): "Male" | "Female" | "Other" | "" {
+  switch (gender?.toLowerCase()) {
+    case "male":
+      return "Male";
+    case "female":
+      return "Female";
+    case "intersex":
+    case "other":
+      return "Other";
+    default:
+      return "";
+  }
 }
 

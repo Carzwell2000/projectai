@@ -97,7 +97,7 @@ def list_unsynced_patients(_: dict[str, str] = Depends(get_current_admin)) -> li
         connection.row_factory = sqlite3.Row
         patient_rows = connection.execute(
             """
-            SELECT id, name, phone, date_of_birth, created_at, sync_status, nurse_id
+            SELECT id, name, phone, date_of_birth, email, address, created_at, sync_status, nurse_id
             FROM patients
             WHERE sync_status != 'synced'
             ORDER BY created_at DESC
@@ -113,6 +113,8 @@ def list_unsynced_patients(_: dict[str, str] = Depends(get_current_admin)) -> li
             "name": row["name"],
             "phone": row["phone"],
             "dateOfBirth": row["date_of_birth"],
+            "email": row["email"],
+            "address": row["address"],
             "createdAt": row["created_at"],
             "syncStatus": row["sync_status"],
             "registeredBy": nurse_names.get(row["nurse_id"], "Unknown nurse"),

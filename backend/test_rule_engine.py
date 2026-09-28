@@ -24,3 +24,38 @@ def test_high_fever_in_child_is_urgent():
 def test_stable_inputs_are_routine():
     result = infer_triage(age=30, temperature=36.8, blood_pressure="120/80", symptoms="mild cough")
     assert result.level == "routine"
+
+
+def test_normal_pregnancy_blood_pressure_is_routine():
+    result = infer_triage(
+        age=30,
+        temperature=36.8,
+        blood_pressure="120/80",
+        symptoms="mild cough",
+        pregnant=True,
+    )
+    assert result.level == "routine"
+
+
+def test_elevated_pregnancy_blood_pressure_is_reported_as_urgent():
+    result = infer_triage(
+        age=30,
+        temperature=36.8,
+        blood_pressure="140/90",
+        symptoms="mild cough",
+        pregnant=True,
+    )
+    assert result.level == "urgent"
+    assert "pregnancy hypertension" in result.rules
+
+
+def test_severe_pregnancy_blood_pressure_is_emergency():
+    result = infer_triage(
+        age=30,
+        temperature=36.8,
+        blood_pressure="160/110",
+        symptoms="mild cough",
+        pregnant=True,
+    )
+    assert result.level == "emergency"
+    assert "severe pregnancy hypertension" in result.rules

@@ -439,11 +439,31 @@ dataset["symptom_list"] = (
 )
 
 # Remove repeated disease/symptom combinations before training.
+placeholder_symptoms = {
+    "none",
+    "n/a",
+    "na",
+    "unknown",
+    "not available",
+    "no symptoms",
+    "no symptom",
+    "null",
+}
+
+dataset["symptom_list"] = dataset["symptom_list"].apply(
+    lambda symptoms: [
+        symptom
+        for symptom in symptoms
+        if symptom not in placeholder_symptoms and len(symptom.strip()) > 1
+    ]
+)
+
 dataset["symptom_signature"] = dataset["symptom_list"].apply(
     lambda symptoms: "|".join(sorted(set(symptoms)))
 )
 dataset = dataset[
-    dataset["symptom_signature"] != ""
+    (dataset["disease"].astype(str).str.strip() != "") &
+    (dataset["symptom_signature"] != "")
 ].drop_duplicates(
     subset=["disease", "symptom_signature"]
 ).copy()

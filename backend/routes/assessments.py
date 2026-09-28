@@ -1,4 +1,5 @@
 import sqlite3
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -27,6 +28,7 @@ from main import (
 from rule_engine import infer_triage
 
 router = APIRouter(prefix="/api")
+logger = logging.getLogger(__name__)
 
 
 def row_to_response(row: dict[str, Any]) -> dict[str, Any]:
@@ -94,7 +96,7 @@ def sync_assessment_to_postgres(
             save_postgres_assessment(request, prediction, created_at, nurse_id)
             mark_local_assessment_synced(request.id)
     except Exception:
-        pass
+        logger.exception("Background sync failed for assessment %s", request.id)
 
 
 def process_assessment(request: AssessmentRequest, nurse_id: str) -> dict[str, Any]:
@@ -104,6 +106,7 @@ def process_assessment(request: AssessmentRequest, nurse_id: str) -> dict[str, A
         temperature=request.temperature,
         blood_pressure=request.bloodPressure,
         symptoms=request.symptoms,
+        pregnant=request.pregnant,
     )
     prediction = {
         "disease": str(prediction.get("disease", "Insufficient evidence")),
@@ -136,6 +139,7 @@ def triage_assessment(request: AssessmentRequest) -> dict[str, Any]:
         temperature=request.temperature,
         blood_pressure=request.bloodPressure,
         symptoms=request.symptoms,
+        pregnant=request.pregnant,
     ).as_dict()
 
 
@@ -235,6 +239,7 @@ def run_sync(nurse: dict[str, str] = Depends(get_current_nurse)) -> dict[str, in
     try:
         assessments = sync_local_assessments(nurse["id"])
     except Exception:
+        logger.exception("Assessment sync setup failed for nurse %s", nurse["id"])
         assessments = 0
 
     try:

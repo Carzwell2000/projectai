@@ -12,6 +12,7 @@ type SyncStore = {
   isSyncing: boolean;
   isBackendConfigured: boolean;
   isOnline: boolean;
+  syncError: string | null;
   refresh: () => Promise<void>;
   startMonitoring: () => () => void;
 };
@@ -28,6 +29,7 @@ export const useSyncStore = create<SyncStore>((set) => ({
   isSyncing: false,
   isBackendConfigured: false,
   isOnline: false,
+  syncError: null,
 
   refresh: async () => {
     set({ isSyncing: false });
@@ -41,28 +43,45 @@ export const useSyncStore = create<SyncStore>((set) => ({
         pendingSyncCount: beforeSync.pending + beforeSync.conflicts,
         isBackendConfigured: true,
         isOnline: true,
+        syncError: beforeSync.pendingAssessments > 0 && !beforeSync.postgresConfigured
+          ? "Assessment sync is not configured on the backend."
+          : null,
       });
 
       if (beforeSync.postgresConfigured) {
         set({ isSyncing: true });
         try {
-          await syncPendingAssessments();
+          let syncError: string | null = null;
+          try {
+            await syncPendingAssessments();
+          } catch {
+            syncError = "The API is reachable, but database sync failed. Check backend logs.";
+          }
           const afterSync = await getSyncStatus();
+          const pendingAssessments = afterSync.pendingAssessments ?? afterSync.pending;
           set({
             pending: afterSync.pending,
-            pendingAssessments: afterSync.pendingAssessments ?? afterSync.pending,
+            pendingAssessments,
             pendingPatients: afterSync.pendingPatients ?? 0,
             conflicts: afterSync.conflicts,
             pendingSyncCount: afterSync.pending + afterSync.conflicts,
             isBackendConfigured: true,
             isOnline: true,
+            syncError: syncError ?? (pendingAssessments > 0
+              ? "Assessments remain pending. Check backend logs for the database error."
+              : null),
           });
         } finally {
           set({ isSyncing: false });
         }
       }
     } catch {
-      set({ isSyncing: false, isBackendConfigured: false, isOnline: false });
+      set({
+        isSyncing: false,
+        isBackendConfigured: false,
+        isOnline: false,
+        syncError: "Unable to reach the API to check sync status.",
+      });
     }
   },
 

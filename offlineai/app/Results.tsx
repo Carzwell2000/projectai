@@ -62,15 +62,16 @@ export default function Results() {
     <SafeAreaView style={tw`flex-1 bg-slate-50`}>
       <Stack.Screen options={{ headerShown: false }} />
       <ScrollView contentContainerStyle={tw`px-5 pb-8`} showsVerticalScrollIndicator={false}>
-        <Navbar variant="hero" />
-        <Pressable onPress={() => router.back()} style={tw`mb-7 mt-3 flex-row items-center`}>
+        <Navbar variant="hero" monitorSync={false} showSyncStatus={false} />
+        <Pressable onPress={() => router.replace("/Assess")} style={tw`mb-7 mt-3 flex-row items-center`}>
           <Ionicons name="arrow-back" size={20} color="#0F766E" />
           <Text style={tw`ml-2 text-sm font-bold text-teal-700`}>Back</Text>
         </Pressable>
         <Text style={tw`mt-2 text-3xl font-bold text-slate-900`}>Assessment result</Text>
+        <Text style={tw`mt-2 text-sm leading-5 text-slate-500`}></Text>
     
 
-        <View style={tw`mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm`}>
+        <View style={tw`mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm`}>
           <View style={tw`flex-row items-center justify-between`}>
             <View>
               <Text style={tw`text-xs font-bold tracking-widest text-teal-700`}>PATIENT ENCOUNTER</Text>
@@ -85,7 +86,7 @@ export default function Results() {
             <Vital label="Temperature" value={`${temperature} °C`} />
             <Vital label="Blood pressure" value={bloodPressure} />
           </View>
-          <View style={tw`mt-4 rounded-xl bg-slate-50 p-3`}>
+          <View style={tw`mt-4 rounded-2xl border border-slate-100 bg-slate-50 p-4`}>
             <Text style={tw`text-xs font-bold uppercase tracking-widest text-slate-500`}>Reported symptoms</Text>
             <Text style={tw`mt-2 text-sm leading-5 text-slate-800`}>{symptomText || "No symptoms provided"}</Text>
           </View>
@@ -95,21 +96,16 @@ export default function Results() {
           <>
             {triageResult ? <TriageCard triage={triageResult} /> : null}
             {modelSymptoms.length ? <ModelSymptoms symptoms={modelSymptoms} /> : null}
-            <SymptomExplanation explanation={explanation} isLoading={isLoadingExplanation} hasError={explanationError} />
             <ResultCard
               icon="medkit-outline"
-              title={statusText === "low_confidence" ? "Predicted Disease" : diseaseText === "Insufficient evidence" ? "Insufficient evidence" : "Possible match"}
+              accent={statusText === "low_confidence" ? "amber" : "teal"}
+              title={diseaseText === "Insufficient evidence" ? "Insufficient evidence" : statusText === "low_confidence" ? "Possible match" : "Possible match"}
               message={diseaseText === "Insufficient evidence"
-                ? " Add a more specific symptom and review the possibilities with a qualified healthcare professional."
-                : statusText === "low_confidence"
-                ? topPredictions[0]
-                  ? `${topPredictions[0].disease} (${Math.round(topPredictions[0].confidence * 100)}%)`
-                  : "No possible disease"
+                ? "Add a more specific symptom and review the possibilities with a qualified healthcare professional."
                 : `${diseaseText}${confidenceText ? ` (${Math.round(Number(confidenceText) * 100)}% confidence)` : ""}`}
             />
-            <ResultCard icon="list-outline" title="Recommendations" message={recommendationText || "Review this result with a qualified healthcare professional."} />
-            <Text style={tw`mt-3 text-right text-xs text-slate-400`}></Text>
-            <OtherPossibleDiseases predictions={topPredictions.slice(1, )} />
+            {explanationError ? <ResultCard icon="list-outline" accent="amber" title="Recommendation" message={recommendationText || "Review this result with a qualified healthcare professional."} /> : null}
+            <DiseaseExplanations explanation={explanation} isLoading={isLoadingExplanation} hasError={explanationError} predictions={topPredictions} />
           </>
         ) : (
           <ResultPlaceholder
@@ -148,8 +144,7 @@ function parseSymptoms(value: string): string[] {
 function ModelSymptoms({ symptoms }: { symptoms: string[] }) {
   return (
     <View style={tw`mt-5 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm`}>
-      <Text style={tw`text-base font-bold text-slate-900`}>Symptoms recognized by model</Text>
-      <Text style={tw`mt-2 text-sm leading-5 text-slate-600`}>{symptoms.join(", ")}</Text>
+      
     </View>
   );
 }
@@ -163,16 +158,15 @@ function Vital({ label, value }: { label: string; value: string }) {
   );
 }
 
-function SymptomExplanation({ explanation, isLoading, hasError }: { explanation: AssessmentExplanation | null; isLoading: boolean; hasError: boolean }) {
-  const displayedFeatures = explanation?.features.filter((item) => item.direction === "supports" || item.feature.includes("temperature")) ?? [];
-  const clinicalSignals = explanation?.clinicalSignals ?? [];
-  if (!isLoading && !displayedFeatures.length && !clinicalSignals.length && !hasError) return null;
+function DiseaseExplanations({ explanation, isLoading, hasError, predictions }: { explanation: AssessmentExplanation | null; isLoading: boolean; hasError: boolean; predictions: { disease: string; confidence: number }[] }) {
+  const diseaseExplanations = explanation?.predictedDiseases ?? [];
+  if (!isLoading && !diseaseExplanations.length && !hasError) return null;
 
   if (isLoading) {
     return (
       <View style={tw`mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm`}>
-        <Text style={tw`text-base font-bold text-slate-900`}>Symptom contribution</Text>
-        <Text style={tw`mt-2 text-sm text-slate-500`}>Loading model explanation...</Text>
+        <Text style={tw`text-base font-bold text-slate-900`}>Disease explanations</Text>
+        <Text style={tw`mt-2 text-sm text-slate-500`}>Loading  explanations...</Text>
       </View>
     );
   }
@@ -180,17 +174,44 @@ function SymptomExplanation({ explanation, isLoading, hasError }: { explanation:
   if (hasError) {
     return (
       <View style={tw`mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-5`}>
-        <Text style={tw`text-base font-bold text-amber-900`}>Symptom contribution unavailable</Text>
-        <Text style={tw`mt-2 text-sm leading-5 text-amber-800`}>The prediction is available, but the model explanation could not be loaded. Check that the backend is running and try the assessment again.</Text>
+        <Text style={tw`text-base font-bold text-amber-900`}>Disease explanations unavailable</Text>
+        <Text style={tw`mt-2 text-sm leading-5 text-amber-800`}>The predictions are available, but their  explanations could not be loaded.</Text>
       </View>
     );
   }
 
+  const details = (diseaseExplanations.length ? diseaseExplanations : predictions.map((prediction) => ({ ...prediction, recommendation: "Review this possible match with a qualified healthcare professional.", features: [] }))).filter((prediction) => Math.round(prediction.confidence * 100) >= 1);
+  if (!details.length) return null;
+  return (
+    <View style={tw`mt-7`}>
+      <View style={tw`mb-3 flex-row items-center`}>
+        <View style={tw`mr-2 h-2 w-2 rounded-full bg-teal-500`} />
+        <Text style={tw`text-xs font-bold uppercase tracking-widest text-slate-500`}> explanations</Text>
+      </View>
+      <View style={tw`gap-4`}>
+      {details.map((item) => <DiseaseExplanation key={item.disease} explanation={item} />)}
+      </View>
+    </View>
+  );
+}
+
+function DiseaseExplanation({ explanation }: { explanation: AssessmentExplanation["predictedDiseases"][number] }) {
+  const displayedFeatures = explanation.features.filter((item) => item.direction === "supports" || item.feature.includes("temperature"));
   const maximumContribution = Math.max(...displayedFeatures.map((item) => Math.abs(item.contribution)), 1);
   return (
-    <View style={tw`mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm`}>
-      <Text style={tw`text-base font-bold text-slate-900`}>Model contribution</Text>
-      <Text style={tw`mt-1 text-xs leading-4 text-slate-500`}>Entered symptoms and temperature used for this prediction.</Text>
+    <View style={tw`rounded-3xl border border-slate-200 bg-white p-5 shadow-sm`}>
+      <View style={tw`flex-row items-center justify-between`}>
+        <Text style={tw`flex-1 text-base font-bold text-slate-900`}>{explanation.disease}</Text>
+        <View style={tw`rounded-full bg-teal-50 px-3 py-1`}>
+          <Text style={tw`text-xs font-bold text-teal-700`}>{Math.round(explanation.confidence * 100)}%</Text>
+        </View>
+      </View>
+      <Text style={tw`mt-1 text-xs leading-4 text-slate-500`}></Text>
+      <View style={tw`mt-4 rounded-2xl bg-teal-50 p-3`}>
+        <Text style={tw`text-[10px] font-bold uppercase tracking-widest text-teal-700`}>Recommendation</Text>
+        <Text style={tw`mt-1 text-sm leading-5 text-slate-700`}>{explanation.recommendation}</Text>
+      </View>
+      <Text style={tw`mt-4 text-xs leading-4 text-slate-500`}>why this disease.</Text>
       <View style={tw`mt-4 gap-3`}>
         {displayedFeatures.map((item) => (
           <View key={`${item.feature}-${item.contribution}`}>
@@ -204,12 +225,6 @@ function SymptomExplanation({ explanation, isLoading, hasError }: { explanation:
           </View>
         ))}
       </View>
-      {clinicalSignals.length ? <View style={tw`mt-5 border-t border-slate-100 pt-4`}>
-        <Text style={tw`text-sm font-bold text-slate-900`}>Clinical vital-sign signals</Text>
-        <View style={tw`mt-3 gap-3`}>
-          {clinicalSignals.map((signal) => <View key={`${signal.feature}-${signal.value}`} style={tw`rounded-xl ${signal.status === "high" ? "bg-rose-50" : "bg-sky-50"} p-3`}><View style={tw`flex-row items-center justify-between`}><Text style={tw`text-sm font-bold text-slate-800`}>{signal.feature}</Text><Text style={tw`text-sm font-bold ${signal.status === "high" ? "text-rose-700" : "text-sky-700"}`}>{signal.status.toUpperCase()} · {signal.value}</Text></View><Text style={tw`mt-1 text-xs leading-4 text-slate-600`}>{signal.meaning}</Text></View>)}
-        </View>
-      </View> : null}
     </View>
   );
 }
@@ -232,7 +247,7 @@ function TriageCard({ triage }: { triage: TriageRecommendation }) {
 function parsePredictions(value: string) {
   try {
     const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item.disease === "string" && typeof item.confidence === "number").slice(0, 5) : [];
+    return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item.disease === "string" && typeof item.confidence === "number" && Math.round(item.confidence * 100) >= 1).slice(0, 5) : [];
   } catch {
     return [];
   }
@@ -268,20 +283,24 @@ function ResultPlaceholder({ icon, title, message }: { icon: keyof typeof Ionico
       <Text style={tw`mt-2 text-sm leading-5 text-slate-500`}>{message}</Text>
       <View style={tw`mt-4 flex-row items-center rounded-xl bg-slate-50 px-3 py-3`}>
         <Ionicons name="time-outline" size={17} color="#94A3B8" />
-        <Text style={tw`ml-2 text-xs font-medium text-slate-400`}>Waiting for model response</Text>
+        <Text style={tw`ml-2 text-xs font-medium text-slate-400`}>Waiting for response</Text>
       </View>
     </View>
   );
 }
 
-function ResultCard({ icon, title, message }: { icon: keyof typeof Ionicons.glyphMap; title: string; message: string }) {
+function ResultCard({ icon, title, message, accent = "teal" }: { icon: keyof typeof Ionicons.glyphMap; title: string; message: string; accent?: "teal" | "amber" }) {
+  const iconBackground = accent === "amber" ? "bg-amber-50" : "bg-teal-50";
+  const iconColor = accent === "amber" ? "#B45309" : "#0F766E";
   return (
-    <View style={tw`mt-6 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm`}>
-      <View style={tw`h-11 w-11 items-center justify-center rounded-xl bg-teal-50`}>
-        <Ionicons name={icon} size={23} color="#0F766E" />
+    <View style={tw`mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm`}>
+      <View style={tw`flex-row items-center`}>
+      <View style={tw`h-11 w-11 items-center justify-center rounded-2xl ${iconBackground}`}>
+        <Ionicons name={icon} size={23} color={iconColor} />
       </View>
-      <Text style={tw`mt-4 text-lg font-bold text-slate-900`}>{title}</Text>
-      <Text style={tw`mt-2 text-sm leading-5 text-slate-600`}>{message}</Text>
+      <Text style={tw`ml-3 text-lg font-bold text-slate-900`}>{title}</Text>
+      </View>
+      <Text style={tw`mt-4 text-sm leading-5 text-slate-600`}>{message}</Text>
     </View>
   );
 }

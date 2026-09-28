@@ -16,6 +16,23 @@ network interfaces when started with the project command. On a physical device,
 set
 `EXPO_PUBLIC_API_URL` in `offlineai/.env.local` to the computer's LAN address.
 
+## Password reset email
+
+Password reset codes are sent by Resend. In the Resend dashboard, create an API
+key and verify the domain used for the sender address. Create `backend/.env.local`
+with these settings:
+
+```dotenv
+RESEND_API_KEY=re_your_api_key
+RESEND_FROM_EMAIL=Clinical Care <no-reply@your-verified-domain.com>
+```
+
+Keep this file on the backend only; do not put the API key in an Expo
+`EXPO_PUBLIC_*` variable. Local `.env` files are ignored by Git. Restart the API
+after changing the settings. Reset codes expire after 10 minutes and can only be
+used once. The request endpoint returns the same success response for unknown
+email addresses to avoid revealing which accounts are registered.
+
 Use `http://127.0.0.1:8000/` or `http://127.0.0.1:8000/docs` in a browser.
 `0.0.0.0` is only the bind address used by Uvicorn; it is not a browser URL.
 
