@@ -79,7 +79,7 @@ export default function RootLayout() {
       <Tabs.Screen
         name="Patientrecords"
         options={{
-          title: "Patients",
+          title: "Assessments",
           tabBarBadgeStyle: { backgroundColor: "#E11D48", color: "#FFFFFF" },
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="people-outline" size={size} color={color} />

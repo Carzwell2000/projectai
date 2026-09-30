@@ -51,13 +51,13 @@ export default function Navbar({ variant = "default", monitorSync = true, showSy
 							<View style={tw`h-7 w-7 items-center justify-center rounded-full bg-sky-100`}><Ionicons name={isConnected ? "cloud-done-outline" : "cloud-offline-outline"} size={17} color="#1671B8" /></View>
 							<View style={tw`ml-3 flex-1 flex-row items-center justify-end`}>
 								<Text numberOfLines={1} style={tw`mr-3 shrink text-xs font-bold text-slate-800`}>
-									{nurseName ?? "Nurse"}
+									{  ""}
 								</Text>
 								<Text numberOfLines={2} style={tw`shrink text-right text-xs font-medium text-slate-700`}>
 									{isSyncing
 										? "Syncing records..."
 									: syncError
-									? syncError
+									? " not connected to the internet"
 										: pendingSyncCount > 0
 										? `${pendingAssessments} assessments · ${pendingPatients} patients${conflicts ? ` · ${conflicts} conflicts` : ""}`
 										: "All records synced"}
@@ -68,8 +68,8 @@ export default function Navbar({ variant = "default", monitorSync = true, showSy
 					<View style={tw`flex-row items-start justify-between`}>
 						<View>
 							<Text style={tw`text-4xl font-bold text-white`}>AI Health</Text>
-							<Text style={tw`mt-1 text-xl font-medium text-white`}>Decision Support System</Text>
-							<Text style={tw`mt-2 text-sm font-semibold text-white`}>{nurseName ?? "Nurse"}</Text>
+							<Text style={tw`mt-1 text-2xl font-medium text-white`}>Decision Support System</Text>
+							<Text style={tw`mt-2 text-2xl font-semibold text-white`}> Hello {nurseName ?? "Nurse"}</Text>
 						</View>
 						<Pressable
 							accessibilityLabel="Open menu"

@@ -13,6 +13,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from main import (
     AUTH_DATABASE_PATH,
+    LOCAL_DATABASE_PATH,
     PATIENTS_DATABASE_PATH,
     NurseLoginRequest,
     NurseSignupRequest,
@@ -20,6 +21,7 @@ from main import (
     PasswordResetRequest,
     PasswordResetRequestCode,
     ensure_auth_schema,
+    ensure_local_schema,
     ensure_patients_schema,
     hash_password,
     issue_access_token,
@@ -87,6 +89,122 @@ def list_nurses(_: dict[str, str] = Depends(get_current_admin)) -> list[dict[str
             "SELECT id, email, name, role, created_at FROM nurses WHERE role = 'nurse' ORDER BY name"
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+@router.get("/admin/analytics")
+def admin_analytics(_: dict[str, str] = Depends(get_current_admin)) -> dict[str, object]:
+    ensure_local_schema()
+    ensure_patients_schema()
+    ensure_auth_schema()
+
+    today = datetime.now(timezone.utc).date()
+    first_day = today - timedelta(days=6)
+    with sqlite3.connect(LOCAL_DATABASE_PATH) as connection:
+        total_assessments = connection.execute("SELECT COUNT(*) FROM assessments").fetchone()[0]
+        pending_assessments = connection.execute(
+            "SELECT COUNT(*) FROM assessments WHERE sync_status != 'synced'"
+        ).fetchone()[0]
+        conflict_count = connection.execute(
+            "SELECT COUNT(*) FROM assessments WHERE sync_status = 'conflict'"
+        ).fetchone()[0]
+        daily_rows = connection.execute(
+            """
+            SELECT date(created_at), COUNT(*)
+            FROM assessments
+            WHERE date(created_at) >= ?
+            GROUP BY date(created_at)
+            """,
+            (first_day.isoformat(),),
+        ).fetchall()
+        nurse_rows = connection.execute(
+            "SELECT nurse_id, COUNT(*) FROM assessments GROUP BY nurse_id ORDER BY COUNT(*) DESC"
+        ).fetchall()
+        disease_rows = connection.execute(
+            """
+            SELECT COALESCE(NULLIF(TRIM(disease), ''), 'Unknown'), COUNT(*)
+            FROM assessments
+            GROUP BY COALESCE(NULLIF(TRIM(disease), ''), 'Unknown')
+            ORDER BY COUNT(*) DESC
+            LIMIT 5
+            """
+        ).fetchall()
+
+    with sqlite3.connect(PATIENTS_DATABASE_PATH) as connection:
+        total_patients = connection.execute("SELECT COUNT(*) FROM patients").fetchone()[0]
+        pending_patients = connection.execute(
+            "SELECT COUNT(*) FROM patients WHERE sync_status != 'synced'"
+        ).fetchone()[0]
+        patient_daily_rows = connection.execute(
+            """
+            SELECT date(created_at), COUNT(*)
+            FROM patients
+            WHERE date(created_at) >= ?
+            GROUP BY date(created_at)
+            """,
+            (first_day.isoformat(),),
+        ).fetchall()
+
+    with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
+        nurse_names = dict(connection.execute(
+            "SELECT id, name FROM nurses WHERE role = 'nurse'"
+        ).fetchall())
+        total_nurses = len(nurse_names)
+        nurse_daily_rows = connection.execute(
+            """
+            SELECT date(created_at), COUNT(*)
+            FROM nurses
+            WHERE role = 'nurse' AND date(created_at) >= ?
+            GROUP BY date(created_at)
+            """,
+            (first_day.isoformat(),),
+        ).fetchall()
+
+    daily_counts = {day: count for day, count in daily_rows if day}
+    patient_daily_counts = {day: count for day, count in patient_daily_rows if day}
+    nurse_daily_counts = {day: count for day, count in nurse_daily_rows if day}
+    nurse_assessment_counts: dict[str, int] = {}
+    for nurse_id, count in nurse_rows:
+        label = nurse_names.get(nurse_id, "Unassigned")
+        nurse_assessment_counts[label] = nurse_assessment_counts.get(label, 0) + count
+
+    return {
+        "totals": {
+            "assessments": total_assessments,
+            "patients": total_patients,
+            "nurses": total_nurses,
+            "pendingSync": pending_assessments + pending_patients,
+            "conflicts": conflict_count,
+        },
+        "dailyAssessments": [
+            {
+                "date": (first_day + timedelta(days=offset)).isoformat(),
+                "label": (first_day + timedelta(days=offset)).strftime("%a"),
+                "value": daily_counts.get((first_day + timedelta(days=offset)).isoformat(), 0),
+            }
+            for offset in range(7)
+        ],
+        "dailyPatients": [
+            {
+                "date": (first_day + timedelta(days=offset)).isoformat(),
+                "label": (first_day + timedelta(days=offset)).strftime("%a"),
+                "value": patient_daily_counts.get((first_day + timedelta(days=offset)).isoformat(), 0),
+            }
+            for offset in range(7)
+        ],
+        "dailyNurses": [
+            {
+                "date": (first_day + timedelta(days=offset)).isoformat(),
+                "label": (first_day + timedelta(days=offset)).strftime("%a"),
+                "value": nurse_daily_counts.get((first_day + timedelta(days=offset)).isoformat(), 0),
+            }
+            for offset in range(7)
+        ],
+        "assessmentsByNurse": [
+            {"label": name, "value": count}
+            for name, count in sorted(nurse_assessment_counts.items(), key=lambda item: item[1], reverse=True)[:10]
+        ],
+        "topDiseases": [{"label": disease, "value": count} for disease, count in disease_rows],
+    }
 
 
 @router.get("/patients/unsynced")

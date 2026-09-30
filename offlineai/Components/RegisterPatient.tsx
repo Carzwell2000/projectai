@@ -71,9 +71,9 @@ export default function RegisterPatient({ onCancel, onSave, initialPatient }: Re
     <View style={tw`max-h-[92%] rounded-t-3xl border-t border-slate-200 bg-white px-5 pb-8 pt-6`}>
       <View style={tw`mb-5 flex-row items-center justify-between`}>
         <View>
-          <Text style={tw`text-xs font-bold tracking-widest text-teal-700`}>PATIENT INTAKE</Text>
+          <Text style={tw`text-xs font-bold tracking-widest text-teal-700`}></Text>
           <Text style={tw`mt-1 text-2xl font-bold text-slate-900`}>{initialPatient ? "Edit patient" : "Register patient"}</Text>
-          <Text style={tw`mt-1 text-sm leading-5 text-slate-500`}>{initialPatient ? "Correct the patient details below." : "Add the patient details below to create a secure record."}</Text>
+          <Text style={tw`mt-1 text-sm leading-5 text-slate-500`}>{initialPatient ? "" : ""}</Text>
         </View>
         <Pressable accessibilityLabel="Close registration form" onPress={onCancel} style={tw`h-10 w-10 items-center justify-center rounded-full bg-slate-100`}>
           <Ionicons name="close-outline" size={24} color="#475569" />
@@ -81,11 +81,11 @@ export default function RegisterPatient({ onCancel, onSave, initialPatient }: Re
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <Text style={tw`mb-3 text-xs font-bold uppercase tracking-widest text-slate-400`}>Personal details</Text>
-        <FormField label="Full name" placeholder="e.g. Maya Okafor" value={name} onChangeText={setName} required />
+        <Text style={tw`mb-3 text-xl font-bold uppercase tracking-widest text-black`}>Personal details</Text>
+        <FormField label="Fullname" placeholder="" value={name} onChangeText={setName} required />
         <FormField
           label="Phone number"
-          placeholder="e.g. +234 800 000 0000"
+          placeholder=""
           value={phone}
           onChangeText={setPhone}
           keyboardType="phone-pad"
@@ -94,9 +94,9 @@ export default function RegisterPatient({ onCancel, onSave, initialPatient }: Re
         <FormField label="Date of birth" placeholder="DD / MM / YYYY" value={dateOfBirth} onChangeText={setDateOfBirth} required />
 
         <View style={tw`mb-4`}>
-          <Text style={tw`mb-2 text-sm font-bold text-slate-700`}>Gender<Text style={tw`text-rose-500`}> *</Text></Text>
+          <Text style={tw`mb-2 text-sm font-bold text-slate-700`}>Gender<Text style={tw`text-rose-500`}> </Text></Text>
           <View style={tw`flex-row flex-wrap gap-2`}>
-            {[['female', 'Female'], ['male', 'Male'], ['intersex', 'Intersex'], ['other', 'Other'], ['prefer_not_to_say', 'Prefer not to say']].map(([value, label]) => (
+            {[['female', 'Female'], ['male', 'Male'], ['other', 'Other'],].map(([value, label]) => (
               <Pressable
                 key={value}
                 onPress={() => { setGender(value as NewPatient["gender"]); setError(""); }}
@@ -108,9 +108,9 @@ export default function RegisterPatient({ onCancel, onSave, initialPatient }: Re
           </View>
         </View>
 
-        <Text style={tw`mb-3 mt-2 text-xs font-bold uppercase tracking-widest text-slate-400`}>Contact details</Text>
-        <FormField label="Email address" placeholder="e.g. maya@example.com" value={email} onChangeText={setEmail} keyboardType="email-address" required />
-        <FormField label="Address" placeholder="Street, city, state" value={address} onChangeText={setAddress} multiline required />
+        <Text style={tw`mb-3 mt-2 text-xs font-bold uppercase tracking-widest text-slate-400`}></Text>
+        <FormField label="Email address" placeholder="" value={email} onChangeText={setEmail} keyboardType="email-address" required />
+        <FormField label="Address" placeholder="" value={address} onChangeText={setAddress} multiline required />
 
         {error ? (
           <View style={tw`mb-4 flex-row items-start rounded-xl border border-rose-200 bg-rose-50 px-3 py-3`}>
@@ -151,14 +151,13 @@ function FormField({ label, placeholder, value, onChangeText, keyboardType = "de
     <View style={tw`mb-4`}>
       <View style={tw`mb-2 flex-row items-center justify-between`}>
         <Text style={tw`text-sm font-bold text-slate-700`}>
-          {label}{required ? <Text style={tw`text-rose-500`}> *</Text> : null}
+          {label}{required ? <Text style={tw`text-rose-500`}> </Text> : null}
         </Text>
         {helperText ? <Text style={tw`text-xs text-slate-400`}>{helperText}</Text> : null}
       </View>
       <TextInput
         value={value}
         onChangeText={onChangeText}
-        placeholder={placeholder}
         placeholderTextColor="#94A3B8"
         keyboardType={keyboardType}
         multiline={multiline}

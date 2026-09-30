@@ -82,6 +82,26 @@ export async function createNurse(credentials: AuthCredentials): Promise<Nurse> 
 
 export type RegisteredNurse = Nurse & { created_at: string };
 
+export type AdminAnalytics = {
+	totals: {
+		assessments: number;
+		patients: number;
+		nurses: number;
+		pendingSync: number;
+		conflicts: number;
+	};
+	dailyAssessments: { date: string; label: string; value: number }[];
+	dailyPatients: { date: string; label: string; value: number }[];
+	dailyNurses: { date: string; label: string; value: number }[];
+	assessmentsByNurse: { label: string; value: number }[];
+	topDiseases: { label: string; value: number }[];
+};
+
+export async function getAdminAnalytics(): Promise<AdminAnalytics> {
+	const response = await api.get<AdminAnalytics>("/api/auth/admin/analytics");
+	return response.data;
+}
+
 export async function listNurses(): Promise<RegisteredNurse[]> {
 	const response = await api.get<RegisteredNurse[]>("/api/auth/nurses");
 	return response.data;

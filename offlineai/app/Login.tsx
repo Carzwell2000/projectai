@@ -75,23 +75,21 @@ export default function Login() {
             <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(7, 27, 29, 0.34)" }]} />
             <View style={tw`absolute inset-x-6 bottom-12`}>
               <View style={tw`flex-row items-center`}>
-                <Ionicons name="medical" size={16} color="#D6F3E8" />
-                <Text style={tw`ml-2 text-xs font-bold tracking-widest text-white`}>HEALTH DECISION SUPPORT</Text>
+                
+                <Text style={tw`ml-2 text-2xl font-bold tracking-widest text-white`}>HEALTH DECISION SUPPORT SYSTEM</Text>
               </View>
               <Text style={tw`mt-4 max-w-[340px] text-3xl font-bold leading-9 text-white`}>
-                Better insight. More confident care.
+              
               </Text>
             </View>
           </View>
 
           <View style={tw`-mt-7 rounded-t-[28px] bg-[#f5f8f6] px-6 pt-7`}>
             <View style={tw`mb-6 flex-row items-center`}>
-              <View style={tw`h-11 w-11 items-center justify-center rounded-2xl bg-[#d9eee7]`}>
-                <Ionicons name="heart-outline" size={23} color="#176B5B" />
-              </View>
+      
               <View style={tw`ml-3`}>
-                <Text style={tw`text-xs font-bold tracking-widest text-[#176B5B]`}>CLINICAL CARE</Text>
-                <Text style={tw`mt-1 text-sm font-medium text-slate-500`}>A clearer view of every patient</Text>
+                <Text style={tw`text-xs font-bold tracking-widest text-[#176B5B]`}></Text>
+                <Text style={tw`mt-1 text-sm font-medium text-slate-500`}></Text>
               </View>
             </View>
 

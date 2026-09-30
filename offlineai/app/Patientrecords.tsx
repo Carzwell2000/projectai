@@ -50,7 +50,7 @@ export default function Patientrecords() {
         <Navbar variant="hero" />
         <View style={tw`flex-row items-end justify-between pt-3`}>
           <View>
-            <Text style={tw`text-xs font-bold tracking-widest text-teal-700`}>PATIENT CARE</Text>
+            <Text style={tw`text-xs font-bold tracking-widest text-teal-700`}></Text>
             <Text style={tw`mt-2 text-3xl font-bold text-slate-900`}>Patient records</Text>
           </View>
         </View>
@@ -66,7 +66,7 @@ export default function Patientrecords() {
           <Text style={tw`text-sm font-medium text-slate-500`}>{patients.length} records</Text>
         </View>
         {loadError ? <Text style={tw`mt-2 text-sm font-medium text-rose-600`}>{loadError}</Text> : null}
-        <View style={tw`mt-2 flex-row items-center justify-between`}><Text style={tw`text-xs text-slate-400`}>Swipe or use arrows to view all fields.</Text><View style={tw`rounded-full bg-teal-50 px-2 py-1`}><Text style={tw`text-[10px] font-bold text-teal-700`}>CLINICAL TABLE</Text></View></View>
+        <View style={tw`mt-2 flex-row items-center justify-between`}><Text style={tw`text-xs text-slate-400`}></Text><View style={tw`rounded-full bg-teal-50 px-2 py-1`}><Text style={tw`text-[10px] font-bold text-teal-700`}></Text></View></View>
         <View style={tw`mt-3 flex-row justify-end gap-2`}>
           <Pressable
             accessibilityLabel="Move table left"

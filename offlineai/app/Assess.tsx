@@ -173,18 +173,6 @@ export default function Assess() {
         {/* Navbar */}
         <Navbar variant="hero" />
 
-        {/* Header */}
-        <View style={tw`mt-4 overflow-hidden rounded-3xl bg-teal-800 p-5`}>
-          <View style={tw`flex-row items-center justify-between`}>
-            <View style={tw`h-10 w-10 items-center justify-center rounded-xl bg-teal-700`}>
-              <Ionicons name="pulse-outline" size={23} color="#CCFBF1" />
-            </View>
-            <Text style={tw`text-xs font-bold tracking-widest text-teal-200`}>CLINICAL WORKSPACE</Text>
-          </View>
-          <Text style={tw`mt-5 text-3xl font-bold text-white`}>Assess a patient</Text>
-          <Text style={tw`mt-2 text-sm leading-5 text-teal-100`}>Capture symptoms and vital signs for decision support.</Text>
-        </View>
-
         {/* Patient Details */}
         <View
           style={tw`mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}

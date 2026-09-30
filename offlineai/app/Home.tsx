@@ -1,10 +1,10 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Text, View } from "react-native";
-import { BarChart } from "react-native-gifted-charts";
 import { SafeAreaView } from "react-native-safe-area-context";
 import tw from "twrnc";
 import Navbar from "../Components/Navbar";
+import Bar from "../Components/Charts/Bar";
 import { getApiErrorMessage, listAssessments, type LocalAssessment } from "../services/api";
 
 type WeeklyAssessmentPoint = {
@@ -16,7 +16,6 @@ export default function Home() {
   const [assessments, setAssessments] = useState<LocalAssessment[]>([]);
   const [isLoadingAssessments, setIsLoadingAssessments] = useState(true);
   const [assessmentError, setAssessmentError] = useState("");
-  const [chartSize, setChartSize] = useState({ width: 0, height: 220 });
   const weeklyAssessments = useMemo(
     () => getWeeklyAssessmentCounts(assessments),
     [assessments],
@@ -25,8 +24,6 @@ export default function Home() {
     () => weeklyAssessments.map((point) => ({ value: point.count, label: point.day })),
     [weeklyAssessments],
   );
-  const chartMaximum = Math.max(4, ...weeklyAssessments.map((point) => point.count));
-  const chartStep = Math.ceil(chartMaximum / 4);
 
   useFocusEffect(
     useCallback(() => {
@@ -54,12 +51,22 @@ export default function Home() {
   return (
     <SafeAreaView style={tw`flex-1 bg-slate-50`}>
       <Navbar variant="hero" />
-      <View style={tw`flex-1 px-5`}>
+      <View style={tw`flex-1 bg-slate-100 px-5 py-4`}>
         <View
-          style={{ flex: 1, minHeight: 0 }}
-          onLayout={(event) => {
-            const { width, height } = event.nativeEvent.layout;
-            setChartSize({ width, height: Math.max(160, height - 24) });
+          style={{
+            flex: 1,
+            minHeight: 0,
+            padding: 12,
+            paddingBottom: 28,
+            borderRadius: 20,
+            backgroundColor: "#FFFFFF",
+            borderWidth: 1,
+            borderColor: "#E2E8F0",
+            shadowColor: "#0F172A",
+            shadowOpacity: 0.06,
+            shadowRadius: 16,
+            shadowOffset: { width: 0, height: 6 },
+            elevation: 2,
           }}
         >
           {isLoadingAssessments ? (
@@ -67,29 +74,7 @@ export default function Home() {
           ) : assessmentError ? (
             <Text style={tw`py-10 text-center text-sm text-rose-600`}>{assessmentError}</Text>
           ) : (
-            <BarChart
-              data={chartData}
-              width={chartSize.width || undefined}
-              height={chartSize.height}
-              adjustToWidth
-              maxValue={chartStep * 4}
-              noOfSections={4}
-              stepValue={chartStep}
-              barWidth={24}
-              barBorderRadius={4}
-              roundedTop
-              frontColor="#0F766E"
-              xAxisColor="#CBD5E1"
-              yAxisColor="transparent"
-              yAxisLabelWidth={42}
-              yAxisTextStyle={{ color: "#475569", fontSize: 11 }}
-              xAxisLabelTextStyle={{ color: "#475569", fontSize: 10, fontWeight: "600" }}
-              rulesColor="#DDE6E5"
-              rulesThickness={1}
-              rulesType="dashed"
-              initialSpacing={10}
-              endSpacing={10}
-            />
+            <Bar data={chartData} />
           )}
         </View>
       </View>
