@@ -9,7 +9,7 @@ import { explainAssessment, type AssessmentExplanation, type TriageRecommendatio
 
 export default function Results() {
   const router = useRouter();
-  const { name = "Patient", age = "", symptoms = "", temperature = "", bloodPressure = "", disease = "", confidence = "", recommendation = "", status = "", predictions = "[]", recognizedSymptoms = "[]", triage = "", error = "" } = useLocalSearchParams<{
+  const { name = "Patient", age = "", symptoms = "", temperature = "", bloodPressure = "", disease = "", confidence = "", recommendation = "", status = "", recognizedSymptoms = "[]", triage = "" } = useLocalSearchParams<{
     name: string;
     age: string;
     symptoms: string;
@@ -19,23 +19,24 @@ export default function Results() {
     confidence: string;
     recommendation: string;
     status: string;
-    predictions: string;
     recognizedSymptoms: string;
     triage: string;
-    error: string;
   }>();
   const symptomText = Array.isArray(symptoms) ? symptoms.join(", ") : symptoms;
   const diseaseText = Array.isArray(disease) ? disease[0] : disease;
   const confidenceText = Array.isArray(confidence) ? confidence[0] : confidence;
   const recommendationText = Array.isArray(recommendation) ? recommendation[0] : recommendation;
   const statusText = Array.isArray(status) ? status[0] : status;
-  const predictionText = Array.isArray(predictions) ? predictions[0] : predictions;
-  const topPredictions = parsePredictions(predictionText);
   const modelSymptoms = parseSymptoms(Array.isArray(recognizedSymptoms) ? recognizedSymptoms[0] : recognizedSymptoms);
   const triageResult = parseTriage(Array.isArray(triage) ? triage[0] : triage);
   const [explanation, setExplanation] = useState<AssessmentExplanation | null>(null);
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
   const [explanationError, setExplanationError] = useState(false);
+  const hasSymptomSupportedPrimary = statusText === "prediction"
+    && Number(confidenceText || 0) >= 0.01
+    && (explanation?.predictedDiseases || []).some((item) =>
+      item.disease === diseaseText && hasReportedSymptomSupport(item.features));
+  const displayedDisease = hasSymptomSupportedPrimary ? diseaseText : "Insufficient evidence";
 
   useEffect(() => {
     if (!diseaseText || !symptomText || !temperature) return;
@@ -98,20 +99,21 @@ export default function Results() {
             {modelSymptoms.length ? <ModelSymptoms symptoms={modelSymptoms} /> : null}
             <ResultCard
               icon="medkit-outline"
-              accent={statusText === "low_confidence" ? "amber" : "teal"}
-              title={diseaseText === "Insufficient evidence" ? "Insufficient evidence" : statusText === "low_confidence" ? "Possible match" : "Possible match"}
-              message={diseaseText === "Insufficient evidence"
-                ? "Add a more specific symptom and review the possibilities with a qualified healthcare professional."
-                : `${diseaseText}${confidenceText ? ` (${Math.round(Number(confidenceText) * 100)}% confidence)` : ""}`}
+              accent={displayedDisease === "Insufficient evidence" ? "amber" : "teal"}
+              title={displayedDisease === "Insufficient evidence" ? "Insufficient evidence" : "Possible match"}
+              message={displayedDisease === "Insufficient evidence"
+                ? "No disease match has sufficient support from the reported symptoms. Record specific symptoms and review the case with a qualified healthcare professional."
+                : `${displayedDisease}${confidenceText ? ` (${Math.round(Number(confidenceText) * 100)}% confidence)` : ""}`}
             />
             {explanationError ? <ResultCard icon="list-outline" accent="amber" title="Recommendation" message={recommendationText || "Review this result with a qualified healthcare professional."} /> : null}
-            <DiseaseExplanations explanation={explanation} isLoading={isLoadingExplanation} hasError={explanationError} predictions={topPredictions} />
+            <DiseaseExplanations explanation={explanation} isLoading={isLoadingExplanation} hasError={explanationError} />
           </>
         ) : (
           <ResultPlaceholder
             icon="medkit-outline"
             title="Prediction unavailable"
-            message={error || "check server maybe its down."}
+            message="The assessment could not be processed. Check the FastAPI server and try again."
+            waitingLabel="Waiting for API response"
           />
         )}
 
@@ -158,9 +160,8 @@ function Vital({ label, value }: { label: string; value: string }) {
   );
 }
 
-function DiseaseExplanations({ explanation, isLoading, hasError, predictions }: { explanation: AssessmentExplanation | null; isLoading: boolean; hasError: boolean; predictions: { disease: string; confidence: number }[] }) {
+function DiseaseExplanations({ explanation, isLoading, hasError }: { explanation: AssessmentExplanation | null; isLoading: boolean; hasError: boolean }) {
   const diseaseExplanations = explanation?.predictedDiseases ?? [];
-  if (!isLoading && !diseaseExplanations.length && !hasError) return null;
 
   if (isLoading) {
     return (
@@ -180,7 +181,8 @@ function DiseaseExplanations({ explanation, isLoading, hasError, predictions }: 
     );
   }
 
-  const details = (diseaseExplanations.length ? diseaseExplanations : predictions.map((prediction) => ({ ...prediction, recommendation: "Review this possible match with a qualified healthcare professional.", features: [] }))).filter((prediction) => Math.round(prediction.confidence * 100) >= 1);
+  const details = diseaseExplanations.filter((prediction) =>
+    prediction.confidence >= 0.01 && hasReportedSymptomSupport(prediction.features));
   if (!details.length) return null;
   return (
     <View style={tw`mt-7`}>
@@ -196,7 +198,8 @@ function DiseaseExplanations({ explanation, isLoading, hasError, predictions }: 
 }
 
 function DiseaseExplanation({ explanation }: { explanation: AssessmentExplanation["predictedDiseases"][number] }) {
-  const displayedFeatures = explanation.features.filter((item) => item.direction === "supports" || item.feature.includes("temperature"));
+  const displayedFeatures = explanation.features.filter((item) =>
+    item.direction === "supports" || item.feature.toLowerCase().includes("temperature"));
   const maximumContribution = Math.max(...displayedFeatures.map((item) => Math.abs(item.contribution)), 1);
   return (
     <View style={tw`rounded-3xl border border-slate-200 bg-white p-5 shadow-sm`}>
@@ -229,6 +232,11 @@ function DiseaseExplanation({ explanation }: { explanation: AssessmentExplanatio
   );
 }
 
+function hasReportedSymptomSupport(features: AssessmentExplanation["features"]): boolean {
+  return features.some((item) =>
+    item.direction === "supports" && !item.feature.toLowerCase().includes("temperature"));
+}
+
 function TriageCard({ triage }: { triage: TriageRecommendation }) {
   const color = triage.level === "emergency" ? "rose" : triage.level === "urgent" ? "amber" : "teal";
   return (
@@ -244,36 +252,7 @@ function TriageCard({ triage }: { triage: TriageRecommendation }) {
   );
 }
 
-function parsePredictions(value: string) {
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item.disease === "string" && typeof item.confidence === "number" && Math.round(item.confidence * 100) >= 1).slice(0, 5) : [];
-  } catch {
-    return [];
-  }
-}
-
-function OtherPossibleDiseases({ predictions }: { predictions: { disease: string; confidence: number }[] }) {
-  const visiblePredictions = predictions.filter((prediction) => prediction.confidence > 0);
-  if (!visiblePredictions.length) return null;
-
-  return (
-    <View style={tw`mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm`}>
-      <Text style={tw`text-base font-bold text-slate-900`}>Other possible diseases</Text>
-      <View style={tw`mt-3 gap-3`}>
-        {visiblePredictions.map((prediction) => (
-          <View key={prediction.disease} style={tw`flex-row items-center`}>
-            <Text style={tw`flex-1 text-sm font-semibold text-slate-700`}>{prediction.disease}</Text>
-            <Text style={tw`text-xs font-bold text-teal-700`}>{Math.round(prediction.confidence * 100)}%</Text>
-            
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function ResultPlaceholder({ icon, title, message }: { icon: keyof typeof Ionicons.glyphMap; title: string; message: string }) {
+function ResultPlaceholder({ icon, title, message, waitingLabel }: { icon: keyof typeof Ionicons.glyphMap; title: string; message: string; waitingLabel: string }) {
   return (
     <View style={tw`mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm`}>
       <View style={tw`h-11 w-11 items-center justify-center rounded-xl bg-teal-50`}>
@@ -283,7 +262,7 @@ function ResultPlaceholder({ icon, title, message }: { icon: keyof typeof Ionico
       <Text style={tw`mt-2 text-sm leading-5 text-slate-500`}>{message}</Text>
       <View style={tw`mt-4 flex-row items-center rounded-xl bg-slate-50 px-3 py-3`}>
         <Ionicons name="time-outline" size={17} color="#94A3B8" />
-        <Text style={tw`ml-2 text-xs font-medium text-slate-400`}>Waiting for response</Text>
+        <Text style={tw`ml-2 text-xs font-medium text-slate-400`}>{waitingLabel}</Text>
       </View>
     </View>
   );

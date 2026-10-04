@@ -65,12 +65,12 @@ export default function Login() {
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={tw`pb-8`}>
           <View style={tw`relative h-80 overflow-hidden bg-teal-950`}>
             <Image
-              source={require("../assets/images/login-clinician.jpg")}
+              source={require("../assets/images/doctor.jpg")}
               style={StyleSheet.absoluteFill}
               contentFit="cover"
               contentPosition="center"
               transition={250}
-              accessibilityLabel="Clinician in a hospital"
+              accessibilityLabel="Doctor in a medical office"
             />
             <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(7, 27, 29, 0.34)" }]} />
             <View style={tw`absolute inset-x-6 bottom-12`}>

@@ -1,0 +1,8 @@
+{
+  "name": "clinical-care-api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "api": "powershell -NoProfile -ExecutionPolicy Bypass -File start_api.ps1"
+  }
+}

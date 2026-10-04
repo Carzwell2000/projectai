@@ -109,5 +109,3 @@ function getWeeklyAssessmentCounts(assessments: LocalAssessment[]): WeeklyAssess
 function getDateKey(date: Date): string {
   return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
 }
-
-

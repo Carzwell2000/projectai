@@ -1,9 +1,8 @@
 import sqlite3
-import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from main import (
     AssessmentRequest,
@@ -18,17 +17,21 @@ from main import (
     save_postgres_assessment,
     settings,
     sync_local_assessments,
+    sync_postgres_assessments_to_local,
     sync_local_nurses,
     sync_local_patients,
     ensure_patients_schema,
     psycopg,
     dict_row,
     get_current_nurse,
+    should_attempt_postgres_sync,
+    defer_postgres_sync,
+    reset_postgres_sync_backoff,
+    get_current_account,
 )
 from rule_engine import infer_triage
 
 router = APIRouter(prefix="/api")
-logger = logging.getLogger(__name__)
 
 
 def row_to_response(row: dict[str, Any]) -> dict[str, Any]:
@@ -91,12 +94,15 @@ def sync_assessment_to_postgres(
     created_at: datetime,
     nurse_id: str,
 ) -> None:
+    if not should_attempt_postgres_sync():
+        return
     try:
         if settings.database_url and psycopg is not None:
             save_postgres_assessment(request, prediction, created_at, nurse_id)
             mark_local_assessment_synced(request.id)
+            reset_postgres_sync_backoff()
     except Exception:
-        logger.exception("Background sync failed for assessment %s", request.id)
+        defer_postgres_sync()
 
 
 def process_assessment(request: AssessmentRequest, nurse_id: str) -> dict[str, Any]:
@@ -169,8 +175,13 @@ def sync_assessments(
     synced = [process_assessment(assessment, nurse["id"]) for assessment in request.assessments]
     try:
         sync_local_assessments(nurse["id"])
-    except Exception:
-        pass
+    except Exception as error:
+        if should_attempt_postgres_sync():
+            defer_postgres_sync()
+        raise HTTPException(
+            status_code=503,
+            detail="Neon sync failed. Local SQLite records remain queued and will be retried.",
+        ) from error
     return {
         "synced": sum(item["syncStatus"] == "synced" for item in synced),
         "assessments": synced,
@@ -189,7 +200,7 @@ def list_assessments(
 
 
 @router.get("/sync/status")
-def sync_status(_nurse: dict[str, str] = Depends(get_current_nurse)) -> dict[str, Any]:
+def sync_status(_account: dict[str, str] = Depends(get_current_account)) -> dict[str, Any]:
     ensure_local_schema()
     ensure_patients_schema()
     with sqlite3.connect(LOCAL_DATABASE_PATH) as connection:
@@ -226,30 +237,36 @@ def sync_status(_nurse: dict[str, str] = Depends(get_current_nurse)) -> dict[str
 
 
 @router.post("/sync/run")
-def run_sync(nurse: dict[str, str] = Depends(get_current_nurse)) -> dict[str, int]:
+def run_sync(account: dict[str, str] = Depends(get_current_account)) -> dict[str, int]:
     """Upload pending SQLite records when PostgreSQL is available."""
     if not settings.database_url or psycopg is None:
         return {"nurses": 0, "assessments": 0, "patients": 0}
+    if not should_attempt_postgres_sync():
+        raise HTTPException(
+            status_code=503,
+            detail="Neon sync is temporarily delayed. Local SQLite records remain queued for retry.",
+        )
 
     try:
         nurses = sync_local_nurses()
-    except Exception:
-        nurses = 0
+        assessments = sync_local_assessments()
+        downloaded_assessments = sync_postgres_assessments_to_local(account["id"])
+        patients = sync_local_patients()
+    except Exception as error:
+        if should_attempt_postgres_sync():
+            defer_postgres_sync()
+        raise HTTPException(
+            status_code=503,
+            detail="Neon sync failed. Local SQLite records remain queued and will be retried.",
+        ) from error
 
-    try:
-        assessments = sync_local_assessments(nurse["id"])
-    except Exception:
-        logger.exception("Assessment sync setup failed for nurse %s", nurse["id"])
-        assessments = 0
-
-    try:
-        patients = sync_local_patients(nurse["id"])
-    except Exception:
-        patients = 0
+    if should_attempt_postgres_sync():
+        reset_postgres_sync_backoff()
 
     return {
         "nurses": nurses,
-        "assessments": assessments,
+        "assessments": assessments + downloaded_assessments,
+        "downloadedAssessments": downloaded_assessments,
         "patients": patients,
     }
 

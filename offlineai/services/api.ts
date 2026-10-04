@@ -107,6 +107,32 @@ export async function listNurses(): Promise<RegisteredNurse[]> {
 	return response.data;
 }
 
+export type NurseContact = Pick<Nurse, "id" | "name">;
+export type NurseMessage = {
+	id: string;
+	senderId: string;
+	recipientId: string;
+	body: string;
+	createdAt: string;
+	deliveredAt: string | null;
+	syncStatus: "pending_sync" | "synced";
+};
+
+export async function listMessageNurses(): Promise<NurseContact[]> {
+	const response = await api.get<NurseContact[]>("/api/auth/messages/nurses");
+	return response.data;
+}
+
+export async function listNurseMessages(nurseId: string): Promise<NurseMessage[]> {
+	const response = await api.get<NurseMessage[]>(`/api/auth/messages/${encodeURIComponent(nurseId)}`);
+	return response.data;
+}
+
+export async function sendNurseMessage(nurseId: string, body: string): Promise<NurseMessage> {
+	const response = await api.post<NurseMessage>(`/api/auth/messages/${encodeURIComponent(nurseId)}`, { body });
+	return response.data;
+}
+
 export async function listUnsyncedPatients(): Promise<PatientRecord[]> {
 	const response = await api.get<PatientRecord[]>("/api/auth/patients/unsynced");
 	return response.data;
@@ -207,6 +233,8 @@ export type LocalAssessment = {
 	nurse_name: string;
 	patient_name: string;
 	age: number;
+	gender?: string;
+	pregnant?: boolean | null;
 	temperature: number;
 	blood_pressure: string;
 	symptoms: string;
@@ -242,6 +270,7 @@ export type SyncStatus = {
 	pending: number;
 	pendingAssessments: number;
 	pendingPatients: number;
+	pendingMessages?: number;
 	synced: number;
 	conflicts: number;
 	postgresConfigured: boolean;
@@ -285,6 +314,10 @@ export async function createAssessment(request: AssessmentRequest): Promise<Asse
 		});
 		return response.data;
 	}
+}
+
+export function isApiUnavailable(error: unknown): boolean {
+	return error instanceof AxiosError && !error.response;
 }
 
 function getApiFallbackUrl(): string {
@@ -409,8 +442,8 @@ export async function getSyncStatus(): Promise<SyncStatus> {
 	return response.data;
 }
 
-export async function syncPendingAssessments(): Promise<{ nurses: number; assessments: number; patients: number }> {
-	const response = await api.post<{ nurses: number; assessments: number; patients: number }>("/api/sync/run", undefined, {
+export async function syncPendingAssessments(): Promise<{ nurses: number; assessments: number; patients: number; messages: number }> {
+	const response = await api.post<{ nurses: number; assessments: number; patients: number; messages: number }>("/api/sync/run", undefined, {
 		timeout: 60_000,
 	});
 	return response.data;

@@ -6,10 +6,12 @@ import secrets
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import BaseModel, Field
 
 from main import (
     AUTH_DATABASE_PATH,
@@ -36,6 +38,121 @@ from main import (
 )
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+class NurseMessageRequest(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+def ensure_message_schema() -> None:
+    ensure_auth_schema()
+    with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS nurse_messages (
+                id TEXT PRIMARY KEY NOT NULL,
+                sender_id TEXT NOT NULL REFERENCES nurses(id) ON DELETE CASCADE,
+                recipient_id TEXT NOT NULL REFERENCES nurses(id) ON DELETE CASCADE,
+                body TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                delivered_at TEXT
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_nurse_messages_conversation "
+            "ON nurse_messages(sender_id, recipient_id, created_at)"
+        )
+
+
+def require_message_contact(contact_id: str, account_id: str) -> None:
+    if contact_id == account_id:
+        raise HTTPException(status_code=400, detail="You cannot start a conversation with yourself.")
+    with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
+        contact = connection.execute(
+            "SELECT 1 FROM nurses WHERE id = ? AND role = 'nurse'", (contact_id,)
+        ).fetchone()
+    if contact is None:
+        raise HTTPException(status_code=404, detail="Nurse account not found.")
+
+
+@router.get("/messages/nurses")
+def list_message_nurses(account: dict[str, str] = Depends(get_current_account)) -> list[dict[str, str]]:
+    ensure_message_schema()
+    with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            "SELECT id, name FROM nurses WHERE role = 'nurse' AND id != ? ORDER BY name",
+            (account["id"],),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@router.get("/messages/{nurse_id}")
+def list_nurse_messages(
+    nurse_id: str,
+    account: dict[str, str] = Depends(get_current_account),
+) -> list[dict[str, str | None]]:
+    ensure_message_schema()
+    require_message_contact(nurse_id, account["id"])
+    now = datetime.now(timezone.utc).isoformat()
+    with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
+        connection.execute(
+            "UPDATE nurse_messages SET delivered_at = ? "
+            "WHERE sender_id = ? AND recipient_id = ? AND delivered_at IS NULL",
+            (now, nurse_id, account["id"]),
+        )
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            """
+            SELECT id, sender_id, recipient_id, body, created_at, delivered_at
+            FROM nurse_messages
+            WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)
+            ORDER BY created_at, id
+            """,
+            (account["id"], nurse_id, nurse_id, account["id"]),
+        ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "senderId": row["sender_id"],
+            "recipientId": row["recipient_id"],
+            "body": row["body"],
+            "createdAt": row["created_at"],
+            "deliveredAt": row["delivered_at"],
+            "syncStatus": "synced",
+        }
+        for row in rows
+    ]
+
+
+@router.post("/messages/{nurse_id}", status_code=status.HTTP_201_CREATED)
+def send_nurse_message(
+    nurse_id: str,
+    request: NurseMessageRequest,
+    account: dict[str, str] = Depends(get_current_account),
+) -> dict[str, str | None]:
+    ensure_message_schema()
+    require_message_contact(nurse_id, account["id"])
+    body = request.body.strip()
+    if not body:
+        raise HTTPException(status_code=422, detail="Message cannot be empty.")
+    message = {
+        "id": f"message-{uuid4().hex}",
+        "senderId": account["id"],
+        "recipientId": nurse_id,
+        "body": body,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "deliveredAt": None,
+        "syncStatus": "synced",
+    }
+    with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
+        connection.execute(
+            "INSERT INTO nurse_messages (id, sender_id, recipient_id, body, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (message["id"], account["id"], nurse_id, body, message["createdAt"]),
+        )
+    return message
 
 
 def session_response(row: sqlite3.Row) -> dict[str, object]:
@@ -166,7 +283,6 @@ def admin_analytics(_: dict[str, str] = Depends(get_current_admin)) -> dict[str,
     for nurse_id, count in nurse_rows:
         label = nurse_names.get(nurse_id, "Unassigned")
         nurse_assessment_counts[label] = nurse_assessment_counts.get(label, 0) + count
-
     return {
         "totals": {
             "assessments": total_assessments,

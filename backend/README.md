@@ -5,16 +5,21 @@ matches, and stores each assessment in the backend-owned `backend/assessments.db
 SQLite database. When Neon Postgres is reachable, local pending rows are synced
 to the `assessments` table automatically.
 
-Start it from the project root:
+Start it from the `backend` directory:
 
-```powershell
-npm.cmd run api
+```bash
+npm run api
 ```
 
 The API is available at `http://127.0.0.1:8000` locally and listens on all
 network interfaces when started with the project command. On a physical device,
 set
 `EXPO_PUBLIC_API_URL` in `offlineai/.env.local` to the computer's LAN address.
+
+Configure the administrator sign-in with `ADMIN_EMAIL` and `ADMIN_PASSWORD` in
+`backend/.env.local`. The configured password is applied to the local admin
+account when authentication initializes, so changing the setting updates the
+admin's login password.
 
 ## Password reset email
 
@@ -39,6 +44,12 @@ Use `http://127.0.0.1:8000/` or `http://127.0.0.1:8000/docs` in a browser.
 The frontend only posts requests to FastAPI. SQLite is used when Neon is offline;
 the API returns `pending_sync` until the row is uploaded to Neon. Use the pooled
 Neon URL for runtime requests and a direct, non-pooled URL for migrations.
+Both web and mobile clients retry `/api/sync/run` when the app opens, resumes, or
+regains connectivity, and every second while online. A sync pass uploads every
+queued local assessment and patient, regardless of which nurse is currently
+signed in; administrator accounts can also check status and trigger this sync.
+Failed uploads stay queued in SQLite and become eligible for retry after one
+second.
 
 The current artifact is `logistic-single-symptom-2`. It compares all disease
 classes when at least one recognized symptom is supplied and returns ranked

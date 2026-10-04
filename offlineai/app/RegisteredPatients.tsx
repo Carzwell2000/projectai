@@ -6,7 +6,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import tw from "twrnc";
 import Navbar from "../Components/Navbar";
 import RegisterPatient, { type NewPatient } from "../Components/RegisterPatient";
-import { createPatient, getApiErrorMessage, listPatients, updatePatient, type PatientRecord } from "../services/api";
+import { createPatient, getApiErrorMessage, updatePatient, type PatientRecord } from "../services/api";
+import { listPatients } from "../services/api";
 import { useSyncStore } from "../stores/syncStore";
 
 export default function RegisteredPatients() {

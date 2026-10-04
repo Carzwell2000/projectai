@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { useEffect } from "react";
-import { getModelCatalog, healthCheck } from "../services/api";
+import { getModelCatalog, healthCheck, isApiUnavailable } from "../services/api";
 import { useAuthStore } from "../stores/authStore";
 import Login from "./Login";
 import Admin from "../Components/Admin";
@@ -17,8 +17,8 @@ export default function RootLayout() {
     const checkBackend = async () => {
       try {
         await healthCheck();
-      } catch {
-        clearSession();
+      } catch (error) {
+        if (!isApiUnavailable(error)) clearSession();
       }
     };
     void checkBackend();
@@ -104,6 +104,20 @@ export default function RootLayout() {
       />
       <Tabs.Screen
         name="Settings"
+        options={{
+          tabBarButton: () => null,
+          tabBarItemStyle: { display: "none" },
+        }}
+      />
+      <Tabs.Screen
+        name="Chat"
+        options={{
+          tabBarButton: () => null,
+          tabBarItemStyle: { display: "none" },
+        }}
+      />
+      <Tabs.Screen
+        name="ChatConversation"
         options={{
           tabBarButton: () => null,
           tabBarItemStyle: { display: "none" },

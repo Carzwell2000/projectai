@@ -15,11 +15,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import tw from "twrnc";
 
 import Navbar from "../Components/Navbar";
-import { createAssessment, getApiErrorMessage, healthCheck, listPatients, parseAssessment, type PatientRecord } from "../services/api";
+import { createAssessment, getApiErrorMessage, isApiUnavailable, listPatients, parseAssessment, type PatientRecord } from "../services/api";
+import { useAuthStore } from "../stores/authStore";
 import { useSyncStore } from "../stores/syncStore";
 
 export default function Assess() {
   const router = useRouter();
+  const session = useAuthStore((state) => state.session);
 
   const [patients, setPatients] = useState<PatientRecord[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null);
@@ -41,12 +43,16 @@ export default function Assess() {
     useCallback(() => {
     let isActive = true;
     setIsLoadingPatients(true);
+    if (!session) {
+      setIsLoadingPatients(false);
+      return;
+    }
     listPatients()
       .then((records) => {
         if (isActive) setPatients(records);
       })
       .catch(() => {
-        if (isActive) setValidationMessage("Unable to load registered patients.");
+        if (isActive) setValidationMessage("Unable to load registered patients. Connect to FastAPI and try again.");
       })
       .finally(() => {
         if (isActive) setIsLoadingPatients(false);
@@ -55,7 +61,7 @@ export default function Assess() {
     return () => {
       isActive = false;
     };
-    }, []),
+    }, [session]),
   );
 
   const selectPatient = (patient: PatientRecord) => {
@@ -113,7 +119,10 @@ export default function Assess() {
     };
 
     try {
-      await healthCheck();
+      if (!session) {
+        setValidationMessage("Sign in before saving an assessment.");
+        return;
+      }
       const prediction = await createAssessment(assessmentRequest);
       void useSyncStore.getState().refresh();
 
@@ -156,7 +165,9 @@ export default function Assess() {
         },
       });
     } catch (error) {
-      setValidationMessage(getApiErrorMessage(error));
+      setValidationMessage(isApiUnavailable(error)
+        ? "Could not reach FastAPI. This device did not save the assessment. Connect to the FastAPI server and submit again."
+        : getApiErrorMessage(error));
     } finally {
       setIsSaving(false);
     }
@@ -544,4 +555,3 @@ function getAssessmentGender(gender: string | undefined): "Male" | "Female" | "O
       return "";
   }
 }
-

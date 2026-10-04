@@ -1,12 +1,13 @@
 import NetInfo from "@react-native-community/netinfo";
 import { AppState } from "react-native";
 import { create } from "zustand";
-import { getSyncStatus, syncPendingAssessments } from "../services/api";
+import { getApiErrorMessage, getSyncStatus, syncPendingAssessments } from "../services/api";
 
 type SyncStore = {
   pending: number;
   pendingAssessments: number;
   pendingPatients: number;
+  pendingMessages: number;
   conflicts: number;
   pendingSyncCount: number;
   isSyncing: boolean;
@@ -24,6 +25,7 @@ export const useSyncStore = create<SyncStore>((set) => ({
   pending: 0,
   pendingAssessments: 0,
   pendingPatients: 0,
+  pendingMessages: 0,
   conflicts: 0,
   pendingSyncCount: 0,
   isSyncing: false,
@@ -34,54 +36,46 @@ export const useSyncStore = create<SyncStore>((set) => ({
   refresh: async () => {
     set({ isSyncing: false });
     try {
-      const beforeSync = await getSyncStatus();
+      let status = await getSyncStatus();
+      let syncError: string | null = null;
       set({
-        pending: beforeSync.pending,
-        pendingAssessments: beforeSync.pendingAssessments ?? beforeSync.pending,
-        pendingPatients: beforeSync.pendingPatients ?? 0,
-        conflicts: beforeSync.conflicts,
-        pendingSyncCount: beforeSync.pending + beforeSync.conflicts,
-        isBackendConfigured: true,
+        isBackendConfigured: status.postgresConfigured,
         isOnline: true,
-        syncError: beforeSync.pendingAssessments > 0 && !beforeSync.postgresConfigured
-          ? "Assessment sync is not configured on the backend."
-          : null,
+        isSyncing: status.postgresConfigured,
       });
 
-      if (beforeSync.postgresConfigured) {
-        set({ isSyncing: true });
+      if (status.postgresConfigured) {
         try {
-          let syncError: string | null = null;
-          try {
-            await syncPendingAssessments();
-          } catch {
-            syncError = "The API is reachable, but database sync failed. Check backend logs.";
-          }
-          const afterSync = await getSyncStatus();
-          const pendingAssessments = afterSync.pendingAssessments ?? afterSync.pending;
-          set({
-            pending: afterSync.pending,
-            pendingAssessments,
-            pendingPatients: afterSync.pendingPatients ?? 0,
-            conflicts: afterSync.conflicts,
-            pendingSyncCount: afterSync.pending + afterSync.conflicts,
-            isBackendConfigured: true,
-            isOnline: true,
-            syncError: syncError ?? (pendingAssessments > 0
-              ? "Assessments remain pending. Check backend logs for the database error."
-              : null),
-          });
-        } finally {
-          set({ isSyncing: false });
+          await syncPendingAssessments();
+        } catch (error) {
+          syncError = getApiErrorMessage(error);
         }
       }
-    } catch {
+
+      status = await getSyncStatus();
+      set({
+        pending: status.pending,
+        pendingAssessments: status.pendingAssessments ?? status.pending,
+        pendingPatients: status.pendingPatients ?? 0,
+        pendingMessages: status.pendingMessages ?? 0,
+        conflicts: status.conflicts,
+        pendingSyncCount: status.pending + status.conflicts,
+        isBackendConfigured: status.postgresConfigured,
+        isOnline: true,
+        syncError: syncError ?? (status.pending > 0 && !status.postgresConfigured
+          ? "Record and message sync is not configured on the backend."
+          : status.pending > 0
+            ? "Records remain pending. Sync will retry when Neon is available."
+            : null),
+      });
+    } catch (error) {
       set({
         isSyncing: false,
-        isBackendConfigured: false,
         isOnline: false,
-        syncError: "Unable to reach the API to check sync status.",
+        syncError: `Unable to reach the API to check sync status. ${getApiErrorMessage(error)}`,
       });
+    } finally {
+      set({ isSyncing: false });
     }
   },
 
@@ -117,8 +111,8 @@ export const useSyncStore = create<SyncStore>((set) => ({
         if (state.isConnected !== false) void refresh();
       });
       const retryInterval = setInterval(() => {
-        void refresh();
-      }, 5_000);
+        if (useSyncStore.getState().isOnline) void refresh();
+      }, 1_000);
 
       stopMonitoring = () => {
         isActive = false;

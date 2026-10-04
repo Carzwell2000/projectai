@@ -17,22 +17,20 @@ export default function Navbar({ variant = "default", monitorSync = true, showSy
 	const nurseName = useAuthStore((state) => state.session?.nurse.name);
 	const logout = useAuthStore((state) => state.logout);
 	const [isMenuOpen, setIsMenuOpen] = useState(false);
-	const pendingSyncCount = useSyncStore((state) => monitorSync ? state.pendingSyncCount : 0);
 	const pendingAssessments = useSyncStore((state) => monitorSync ? state.pendingAssessments : 0);
 	const pendingPatients = useSyncStore((state) => monitorSync ? state.pendingPatients : 0);
-	const conflicts = useSyncStore((state) => monitorSync ? state.conflicts : 0);
 	const isSyncing = useSyncStore((state) => monitorSync ? state.isSyncing : false);
 	const isBackendConfigured = useSyncStore((state) => monitorSync ? state.isBackendConfigured : false);
 	const isOnline = useSyncStore((state) => monitorSync ? state.isOnline : false);
-	const syncError = useSyncStore((state) => monitorSync ? state.syncError : null);
 	const isConnected = isOnline && isBackendConfigured;
+	const unsyncedRecordCount = pendingAssessments + pendingPatients;
 
 	useEffect(() => {
 		if (!monitorSync) return;
 		return useSyncStore.getState().startMonitoring();
 	}, [monitorSync]);
 
-	const openScreen = (screen: "/Analysis" | "/Settings" | "/RegisteredPatients" | "/ChangePassword") => {
+	const openScreen = (screen: "/Analysis" | "/Settings" | "/Chat" | "/RegisteredPatients" | "/ChangePassword") => {
 		setIsMenuOpen(false);
 		router.push(screen);
 	};
@@ -47,20 +45,24 @@ export default function Navbar({ variant = "default", monitorSync = true, showSy
 			{variant === "hero" ? (
 				<View style={tw`bg-sky-500 px-5 pb-8 pt-2`}>
 					{showSyncStatus ? (
-						<View style={tw`mb-6 flex-row items-center rounded-full bg-yellow-300 px-4 py-3`}>
-							<View style={tw`h-7 w-7 items-center justify-center rounded-full bg-sky-100`}><Ionicons name={isConnected ? "cloud-done-outline" : "cloud-offline-outline"} size={17} color="#1671B8" /></View>
-							<View style={tw`ml-3 flex-1 flex-row items-center justify-end`}>
-								<Text numberOfLines={1} style={tw`mr-3 shrink text-xs font-bold text-slate-800`}>
-									{  ""}
+						<View style={tw`mb-6 flex-row items-center rounded-2xl bg-yellow-300 px-4 py-3`}>
+							<View style={tw`h-7 w-7 items-center justify-center rounded-full bg-sky-100`}>
+								<Ionicons name={isConnected ? "cloud-done-outline" : "cloud-offline-outline"} size={17} color="#1671B8" />
+							</View>
+							<View style={tw`ml-3 flex-1`}>
+								<Text style={tw`text-xs font-bold text-slate-800`}>
+									{!isConnected
+										? isOnline ? "Cloud sync is not configured" : "API unavailable"
+										: unsyncedRecordCount > 0
+											? `${unsyncedRecordCount} unsynced record${unsyncedRecordCount === 1 ? "" : "s"}`
+											: isSyncing
+												? "Syncing records..."
+													: "All records synced"}
 								</Text>
-								<Text numberOfLines={2} style={tw`shrink text-right text-xs font-medium text-slate-700`}>
-									{isSyncing
-										? "Syncing records..."
-									: syncError
-									? " not connected to the internet"
-										: pendingSyncCount > 0
-										? `${pendingAssessments} assessments · ${pendingPatients} patients${conflicts ? ` · ${conflicts} conflicts` : ""}`
-										: "All records synced"}
+								<Text style={tw`mt-1 text-xs font-medium text-slate-700`} numberOfLines={3}>
+									{isConnected
+										? `${pendingAssessments} assessments · ${pendingPatients} patients`
+										: ""}
 								</Text>
 							</View>
 						</View>
@@ -113,6 +115,7 @@ export default function Navbar({ variant = "default", monitorSync = true, showSy
 						</View>
 			
 						<MenuItem icon="person-outline" label="Registered patients" onPress={() => openScreen("/RegisteredPatients")} />
+						<MenuItem icon="chatbubble-ellipses-outline" label="Nurse inbox" onPress={() => openScreen("/Chat")} />
 						<MenuItem icon="settings-outline" label="Settings" onPress={() => openScreen("/Settings")} />
 						<MenuItem icon="key-outline" label="Reset password" onPress={() => openScreen("/ChangePassword")} />
 						<MenuItem icon="log-out-outline" label="Sign out" onPress={signOut} />

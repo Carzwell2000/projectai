@@ -4,17 +4,10 @@ FastAPI loads the trained XGBoost artifact from `disease_model.joblib`, predicts
 assessments, and stores them in the backend-owned `assessments.db` SQLite database.
 When Neon Postgres is available, pending local rows are synchronized automatically.
 
-Start the API from the project root:
+Start the API from the `backend` directory:
 
 ```bash
-npm.cmd run api
-```
-
-Or start it from the `backend` directory:
-
-```powershell
-Set-Location backend
-.\start_api.ps1
+npm run api
 ```
 
 The server must bind to `0.0.0.0` for a physical phone to reach it. The

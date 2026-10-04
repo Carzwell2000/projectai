@@ -4,11 +4,12 @@ import json
 import hashlib
 import base64
 import hmac
-import logging
 import re
 import sqlite3
 import sys
 import secrets
+import threading
+import time
 import urllib.request
 from uuid import uuid4
 from contextlib import asynccontextmanager
@@ -32,8 +33,6 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-logger = logging.getLogger(__name__)
-
 try:
     import psycopg
     from psycopg.rows import dict_row
@@ -51,6 +50,29 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 class SyncConflictError(RuntimeError):
     pass
+
+
+_postgres_sync_retry_after = 0.0
+_postgres_sync_lock = threading.Lock()
+
+
+def should_attempt_postgres_sync() -> bool:
+    with _postgres_sync_lock:
+        return time.monotonic() >= _postgres_sync_retry_after
+
+
+def defer_postgres_sync() -> int:
+    global _postgres_sync_retry_after
+    with _postgres_sync_lock:
+        delay = 1
+        _postgres_sync_retry_after = time.monotonic() + delay
+    return delay
+
+
+def reset_postgres_sync_backoff() -> None:
+    global _postgres_sync_retry_after
+    with _postgres_sync_lock:
+        _postgres_sync_retry_after = 0.0
 
 
 class Settings(BaseSettings):
@@ -80,7 +102,7 @@ classifier = artifact["model"]
 feature_names: list[str] = artifact["feature_names"]
 disease_names: list[str] = artifact["disease_names"]
 all_symptoms: set[str] = set(artifact["all_symptoms"])
-MIN_PREDICTION_CONFIDENCE = 0.35
+MIN_PREDICTION_CONFIDENCE = 0.01
 
 
 class NurseSignupRequest(BaseModel):
@@ -132,7 +154,10 @@ def ensure_auth_schema() -> None:
                 """
                 INSERT INTO nurses (id, email, name, password_hash, created_at, role)
                 VALUES (?, ?, ?, ?, ?, 'admin')
-                ON CONFLICT(email) DO UPDATE SET role = 'admin'
+                ON CONFLICT(email) DO UPDATE SET
+                    name = excluded.name,
+                    password_hash = excluded.password_hash,
+                    role = 'admin'
                 """,
                 (
                     "admin",
@@ -350,14 +375,21 @@ def predict_assessment(symptoms: str, temperature: float) -> dict[str, Any]:
         status = "insufficient_evidence"
         prediction_list: list[dict[str, Any]] = []
     else:
-        primary = predictions[0]
-        top_confidence = float(primary["confidence"])
-        recommendation = artifact.get("recommendations", {}).get(
-            primary["disease"],
-            "Review this result with a qualified healthcare professional.",
-        )
-        status = "prediction" if top_confidence >= MIN_PREDICTION_CONFIDENCE else "low_confidence"
-        prediction_list = predictions
+        candidate = predictions[0]
+        top_confidence = float(candidate["confidence"])
+        if top_confidence >= MIN_PREDICTION_CONFIDENCE:
+            primary = candidate
+            recommendation = artifact.get("recommendations", {}).get(
+                primary["disease"],
+                "Review this result with a qualified healthcare professional.",
+            )
+            status = "prediction"
+            prediction_list = predictions
+        else:
+            primary = {"disease": "Insufficient evidence", "confidence": 0.0}
+            recommendation = "The reported symptoms do not provide enough evidence for a reliable match. Record more specific symptoms and review the case with a qualified healthcare professional."
+            status = "low_confidence"
+            prediction_list = []
 
     return {
         "disease": primary["disease"],
@@ -429,18 +461,28 @@ def explain_assessment(symptoms: str, temperature: float, blood_pressure: str = 
         ]
 
     recommendations = artifact.get("recommendations", {})
-    predicted_diseases = [
-        {
-            "disease": disease_names[int(index)],
-            "confidence": round(float(probabilities[index]), 4),
-            "recommendation": recommendations.get(
-                disease_names[int(index)],
-                "Review this possible match with a qualified healthcare professional.",
-            ),
-            "features": features_for(contributions_for(int(index))),
-        }
-        for index in np.argsort(probabilities)[::-1][:5]
-    ] if recognized_symptoms else []
+    predicted_diseases = []
+    if has_sufficient_evidence:
+        for index in np.argsort(probabilities)[::-1][:5]:
+            disease_features = features_for(contributions_for(int(index)))
+            # Temperature can inform triage, but it cannot by itself support a
+            # disease label. Require a positive contribution from a reported,
+            # recognized symptom before showing a disease as a possible match.
+            has_symptom_support = any(
+                item["feature"] in recognized_symptoms and item["direction"] == "supports"
+                for item in disease_features
+            )
+            if not has_symptom_support:
+                continue
+            predicted_diseases.append({
+                "disease": disease_names[int(index)],
+                "confidence": round(float(probabilities[index]), 4),
+                "recommendation": recommendations.get(
+                    disease_names[int(index)],
+                    "Review this possible match with a qualified healthcare professional.",
+                ),
+                "features": disease_features,
+            })
     feature_contributions = predicted_diseases[0]["features"] if predicted_diseases else []
 
     pressure_match = re.fullmatch(r"\s*(\d{2,3})\s*/\s*(\d{2,3})\s*", blood_pressure)
@@ -646,7 +688,7 @@ def ensure_postgres_schema() -> None:
     if not settings.database_url or psycopg is None:
         raise RuntimeError("Database configuration or psycopg is unavailable.")
 
-    with psycopg.connect(settings.database_url, connect_timeout=15) as connection:
+    with psycopg.connect(settings.database_url, connect_timeout=5) as connection:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS nurses (
@@ -828,7 +870,7 @@ def save_postgres_assessment(
         "recommendation": prediction["recommendation"],
         "model_version": prediction["modelVersion"],
     }
-    with psycopg.connect(settings.database_url, connect_timeout=15) as connection:
+    with psycopg.connect(settings.database_url, connect_timeout=5) as connection:
         inserted = connection.execute(
             """
             INSERT INTO assessments
@@ -877,7 +919,7 @@ def save_postgres_assessment(
 
 
 def sync_local_assessments(nurse_id: str | None = None) -> int:
-    if not settings.database_url or psycopg is None:
+    if not settings.database_url or psycopg is None or not should_attempt_postgres_sync():
         return 0
 
     ensure_local_schema()
@@ -918,13 +960,71 @@ def sync_local_assessments(nurse_id: str | None = None) -> int:
         except SyncConflictError:
             mark_local_assessment_conflict(request.id)
         except Exception:
-            logger.exception("Failed to sync assessment %s to PostgreSQL", request.id)
-            continue
+            defer_postgres_sync()
+            raise
+    reset_postgres_sync_backoff()
     return synced
 
 
+def sync_postgres_assessments_to_local(nurse_id: str) -> int:
+    if not settings.database_url or psycopg is None or not should_attempt_postgres_sync():
+        return 0
+
+    ensure_local_schema()
+    ensure_postgres_schema()
+    with psycopg.connect(settings.database_url, connect_timeout=5, row_factory=dict_row) as connection:
+        rows = connection.execute(
+            "SELECT * FROM assessments WHERE nurse_id = %s ORDER BY created_at",
+            (nurse_id,),
+        ).fetchall()
+
+    imported = 0
+    with sqlite3.connect(LOCAL_DATABASE_PATH) as connection:
+        for row in rows:
+            predictions = row.get("predictions") or []
+            if isinstance(predictions, str):
+                try:
+                    predictions = json.loads(predictions)
+                except json.JSONDecodeError:
+                    predictions = []
+            created_at = row["created_at"]
+            if hasattr(created_at, "isoformat"):
+                created_at = created_at.isoformat()
+
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO assessments
+                    (id, nurse_id, patient_name, age, gender, pregnant, temperature, blood_pressure,
+                     symptoms, created_at, disease, confidence, predictions, recommendation,
+                     model_version, sync_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced')
+                """,
+                (
+                    row["id"],
+                    nurse_id,
+                    row["patient_name"],
+                    row["age"],
+                    row.get("gender") or "not_specified",
+                    row.get("pregnant"),
+                    row["temperature"],
+                    row["blood_pressure"],
+                    row["symptoms"],
+                    created_at,
+                    row.get("disease"),
+                    row.get("confidence"),
+                    json.dumps(predictions),
+                    row.get("recommendation") or "",
+                    row.get("model_version") or "unknown",
+                ),
+            )
+            imported += cursor.rowcount
+    connection.close()
+    reset_postgres_sync_backoff()
+    return imported
+
+
 def sync_local_nurses(nurse_id: str | None = None) -> int:
-    if not settings.database_url or psycopg is None:
+    if not settings.database_url or psycopg is None or not should_attempt_postgres_sync():
         return 0
 
     ensure_auth_schema()
@@ -959,6 +1059,7 @@ def sync_local_nurses(nurse_id: str | None = None) -> int:
                     row["role"],
                 ),
             )
+    reset_postgres_sync_backoff()
     return len(rows)
 
 
@@ -1044,7 +1145,7 @@ def mark_local_patient_conflict(patient_id: str) -> None:
 
 
 def sync_local_patients(nurse_id: str | None = None) -> int:
-    if not settings.database_url or psycopg is None:
+    if not settings.database_url or psycopg is None or not should_attempt_postgres_sync():
         return 0
 
     ensure_patients_schema()
@@ -1078,7 +1179,9 @@ def sync_local_patients(nurse_id: str | None = None) -> int:
         except SyncConflictError:
             mark_local_patient_conflict(patient.id)
         except Exception:
-            continue
+            defer_postgres_sync()
+            raise
+    reset_postgres_sync_backoff()
     return synced
 
 

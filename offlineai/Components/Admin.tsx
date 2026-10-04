@@ -1,14 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import {
-  useCallback,
-  useEffect,
-  useState,
-  type ReactNode,
-} from "react";
-
-import {
-  Alert,
-  KeyboardAvoidingView,
+import { useCallback, useEffect,useState, type ReactNode,} from "react";
+import {Alert,KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -45,7 +37,7 @@ type AdminPage =
   | "registered"
   | "password";
 
-const TEAL = "#0F766E";
+const BLUE = "#0EA5E9";
 
 export default function Admin() {
   /*
@@ -377,7 +369,7 @@ export default function Admin() {
           ================================================== */}
 
           <View
-            style={tw`bg-[#0F766E] px-5 pb-7 pt-5`}
+            style={tw`bg-sky-500 px-5 pb-7 pt-5`}
           >
             <View
               style={tw`flex-row items-center justify-between`}
@@ -438,14 +430,6 @@ export default function Admin() {
                 <LoadingCard />
               ) : analytics ? (
                 <>
-                  {/* SECTION TITLE */}
-
-                  <SectionHeading
-                    eyebrow="Overview"
-                    title="Key statistics"
-                    subtitle="Current clinical activity"
-                  />
-
                   {/* METRICS */}
 
                   <View
@@ -506,9 +490,9 @@ export default function Admin() {
                           label:
                             "Assessments",
                           color:
-                            "#0F766E",
+                            "#0EA5E9",
                           fillColor:
-                            "#5EEAD4",
+                            "#7DD3FC",
                           data:
                             analytics.dailyAssessments,
                         },
@@ -562,7 +546,7 @@ export default function Admin() {
                 {/* HEADER */}
 
                 <View
-                  style={tw`bg-[#E6F4F2] px-5 py-5`}
+                  style={tw`bg-[#F0F9FF] px-5 py-5`}
                 >
                   <View
                     style={tw`h-12 w-12 items-center justify-center rounded-2xl bg-white`}
@@ -570,7 +554,7 @@ export default function Admin() {
                     <Ionicons
                       name="person-add-outline"
                       size={24}
-                      color={TEAL}
+                      color={BLUE}
                     />
                   </View>
 
@@ -578,14 +562,6 @@ export default function Admin() {
                     style={tw`mt-4 text-xl font-bold text-slate-900`}
                   >
                     Create a nurse account
-                  </Text>
-
-                  <Text
-                    style={tw`mt-1 text-sm leading-5 text-slate-600`}
-                  >
-                    Add a nurse to the clinical
-                    workspace using their
-                    professional account details.
                   </Text>
                 </View>
 
@@ -634,7 +610,7 @@ export default function Admin() {
                     disabled={isSubmitting}
                     onPress={submit}
                     style={({ pressed }) => [
-                      tw`mt-5 flex-row items-center justify-center rounded-xl bg-[#0F766E] py-4`,
+                      tw`mt-5 flex-row items-center justify-center rounded-xl bg-[#0EA5E9] py-4`,
                       (pressed ||
                         isSubmitting) &&
                         tw`opacity-70`,
@@ -672,13 +648,13 @@ export default function Admin() {
             <View style={tw`px-4 pt-5`}>
 
               <View
-                style={tw`overflow-hidden rounded-2xl border border-teal-100 bg-white shadow-sm`}
+                style={tw`overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-sm`}
               >
 
                 {/* HEADER */}
 
                 <View
-                  style={tw`bg-[#E6F4F2] px-5 py-5`}
+                  style={tw`bg-[#F0F9FF] px-5 py-5`}
                 >
                   <View
                     style={tw`h-12 w-12 items-center justify-center rounded-2xl bg-white`}
@@ -686,21 +662,20 @@ export default function Admin() {
                     <Ionicons
                       name="shield-checkmark-outline"
                       size={25}
-                      color={TEAL}
+                      color={BLUE}
                     />
                   </View>
 
                   <Text
                     style={tw`mt-4 text-xl font-bold text-slate-900`}
                   >
-                    Change administrator password
+                    Change password
                   </Text>
 
                   <Text
                     style={tw`mt-1 text-sm leading-5 text-slate-600`}
                   >
-                    Use your current password to
-                    set a new administrator password.
+        
                   </Text>
                 </View>
 
@@ -746,8 +721,7 @@ export default function Admin() {
                     <Text
                       style={tw`ml-2 flex-1 text-xs leading-5 text-slate-500`}
                     >
-                      Your new password must contain
-                      at least 8 characters.
+            
                     </Text>
                   </View>
 
@@ -759,7 +733,7 @@ export default function Admin() {
                       updateAdminPassword
                     }
                     style={({ pressed }) => [
-                      tw`mt-4 flex-row items-center justify-center rounded-xl bg-[#0F766E] py-4`,
+                      tw`mt-4 flex-row items-center justify-center rounded-xl bg-[#0EA5E9] py-4`,
                       (pressed ||
                         isChangingPassword) &&
                         tw`opacity-60`,
@@ -785,10 +759,6 @@ export default function Admin() {
             </View>
           ) : null}
 
-          {/* ==================================================
-              REGISTERED NURSES
-          ================================================== */}
-
           {activePage === "registered" ? (
             <View style={tw`px-4 pt-5`}>
 
@@ -798,10 +768,10 @@ export default function Admin() {
                 subtitle="Manage healthcare staff accounts"
                 rightContent={
                   <View
-                    style={tw`min-w-10 items-center justify-center rounded-full bg-teal-100 px-3 py-2`}
+                    style={tw`min-w-10 items-center justify-center rounded-full bg-sky-100 px-3 py-2`}
                   >
                     <Text
-                      style={tw`text-sm font-bold text-teal-800`}
+                      style={tw`text-sm font-bold text-sky-800`}
                     >
                       {nurses.length}
                     </Text>
@@ -828,19 +798,18 @@ export default function Admin() {
                   <Text
                     style={tw`mt-4 text-base font-bold text-slate-700`}
                   >
-                    No nurse accounts
+                  
                   </Text>
 
                   <Text
                     style={tw`mt-1 text-center text-sm text-slate-500`}
                   >
-                    Registered nurses will appear
-                    here.
+          
                   </Text>
                 </View>
               ) : null}
 
-              {/* NURSE LIST */}
+             
 
               {nurses.map((nurse) => (
                 <View
@@ -848,19 +817,19 @@ export default function Admin() {
                   style={tw`mt-3 flex-row items-center rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}
                 >
 
-                  {/* ICON */}
+                
 
                   <View
-                    style={tw`h-12 w-12 items-center justify-center rounded-2xl bg-teal-50`}
+                    style={tw`h-12 w-12 items-center justify-center rounded-2xl bg-sky-50`}
                   >
                     <Ionicons
                       name="person-outline"
                       size={22}
-                      color={TEAL}
+                      color={BLUE}
                     />
                   </View>
 
-                  {/* INFORMATION */}
+      
 
                   <View
                     style={tw`ml-3 flex-1`}
@@ -994,12 +963,12 @@ export default function Admin() {
               <Ionicons
                 name="log-out-outline"
                 size={17}
-                color={TEAL}
+                color={BLUE}
               />
             </View>
 
             <Text
-              style={tw`ml-2 font-bold text-teal-700`}
+              style={tw`ml-2 font-bold text-sky-700`}
             >
               Sign out
             </Text>
@@ -1039,7 +1008,7 @@ export default function Admin() {
               {/* MENU HEADER */}
 
               <View
-                style={tw`bg-[#0F766E] px-5 py-5`}
+                style={tw`bg-[#0EA5E9] px-5 py-5`}
               >
                 <View
                   style={tw`flex-row items-center`}
@@ -1064,7 +1033,7 @@ export default function Admin() {
                     </Text>
 
                     <Text
-                      style={tw`mt-0.5 text-xs text-teal-100`}
+                      style={tw`mt-0.5 text-xs text-sky-100`}
                     >
                       Dashboard menu
                     </Text>
@@ -1102,7 +1071,7 @@ export default function Admin() {
                         }) => [
                           tw`mb-1 flex-row items-center rounded-xl px-3 py-3.5`,
                           isActive &&
-                            tw`bg-teal-50`,
+                            tw`bg-sky-50`,
                           pressed &&
                             tw`opacity-70`,
                         ]}
@@ -1114,7 +1083,7 @@ export default function Admin() {
                           style={[
                             tw`h-9 w-9 items-center justify-center rounded-xl`,
                             isActive
-                              ? tw`bg-teal-100`
+                              ? tw`bg-sky-100`
                               : tw`bg-slate-100`,
                           ]}
                         >
@@ -1123,7 +1092,7 @@ export default function Admin() {
                             size={19}
                             color={
                               isActive
-                                ? TEAL
+                                ? BLUE
                                 : "#64748B"
                             }
                           />
@@ -1135,7 +1104,7 @@ export default function Admin() {
                           style={[
                             tw`ml-3 text-sm font-semibold`,
                             isActive
-                              ? tw`text-teal-800`
+                              ? tw`text-sky-800`
                               : tw`text-slate-700`,
                           ]}
                         >
@@ -1148,7 +1117,7 @@ export default function Admin() {
                           <Ionicons
                             name="chevron-forward-outline"
                             size={17}
-                            color={TEAL}
+                            color={BLUE}
                             style={tw`ml-auto`}
                           />
                         ) : null}
@@ -1204,7 +1173,7 @@ function SectionHeading({
       <View style={tw`flex-1`}>
 
         <Text
-          style={tw`text-[10px] font-bold uppercase tracking-widest text-teal-600`}
+          style={tw`text-[10px] font-bold uppercase tracking-widest text-sky-600`}
         >
           {eyebrow}
         </Text>
@@ -1262,12 +1231,12 @@ function DashboardCard({
         >
 
           <View
-            style={tw`h-9 w-9 items-center justify-center rounded-xl bg-teal-50`}
+            style={tw`h-9 w-9 items-center justify-center rounded-xl bg-sky-50`}
           >
             <Ionicons
               name={icon}
               size={18}
-              color={TEAL}
+              color={BLUE}
             />
           </View>
 
@@ -1324,12 +1293,12 @@ function AdminMetric({
     >
 
       <View
-        style={tw`h-11 w-11 items-center justify-center rounded-xl bg-teal-50`}
+        style={tw`h-11 w-11 items-center justify-center rounded-xl bg-sky-50`}
       >
         <Ionicons
           name={icon}
           size={21}
-          color={TEAL}
+          color={BLUE}
         />
       </View>
 
@@ -1521,12 +1490,12 @@ function LoadingCard() {
     >
 
       <View
-        style={tw`h-14 w-14 items-center justify-center rounded-full bg-teal-50`}
+        style={tw`h-14 w-14 items-center justify-center rounded-full bg-sky-50`}
       >
         <Ionicons
           name="analytics-outline"
           size={27}
-          color={TEAL}
+          color={BLUE}
         />
       </View>
 
