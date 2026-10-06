@@ -19,11 +19,12 @@ export default function Navbar({ variant = "default", monitorSync = true, showSy
 	const [isMenuOpen, setIsMenuOpen] = useState(false);
 	const pendingAssessments = useSyncStore((state) => monitorSync ? state.pendingAssessments : 0);
 	const pendingPatients = useSyncStore((state) => monitorSync ? state.pendingPatients : 0);
+	const pendingMessages = useSyncStore((state) => monitorSync ? state.pendingMessages : 0);
 	const isSyncing = useSyncStore((state) => monitorSync ? state.isSyncing : false);
 	const isBackendConfigured = useSyncStore((state) => monitorSync ? state.isBackendConfigured : false);
 	const isOnline = useSyncStore((state) => monitorSync ? state.isOnline : false);
 	const isConnected = isOnline && isBackendConfigured;
-	const unsyncedRecordCount = pendingAssessments + pendingPatients;
+	const unsyncedRecordCount = pendingAssessments + pendingPatients + pendingMessages;
 
 	useEffect(() => {
 		if (!monitorSync) return;
@@ -54,7 +55,7 @@ export default function Navbar({ variant = "default", monitorSync = true, showSy
 									{!isConnected
 										? isOnline ? "Cloud sync is not configured" : "API unavailable"
 										: unsyncedRecordCount > 0
-											? `${unsyncedRecordCount} unsynced record${unsyncedRecordCount === 1 ? "" : "s"}`
+											? `${unsyncedRecordCount} unsynced item${unsyncedRecordCount === 1 ? "" : "s"}`
 											: isSyncing
 												? "Syncing records..."
 													: "All records synced"}

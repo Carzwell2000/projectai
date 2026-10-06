@@ -35,6 +35,15 @@ CREATE TABLE IF NOT EXISTS nurses (
   created_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS nurse_messages (
+  id TEXT PRIMARY KEY NOT NULL,
+  sender_id TEXT NOT NULL,
+  recipient_id TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL,
+  delivered_at TIMESTAMPTZ
+);
+
 CREATE TABLE IF NOT EXISTS revoked_tokens (
   token_hash TEXT PRIMARY KEY NOT NULL,
   revoked_at TIMESTAMPTZ NOT NULL

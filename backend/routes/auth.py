@@ -25,6 +25,7 @@ from main import (
     ensure_auth_schema,
     ensure_local_schema,
     ensure_patients_schema,
+    ensure_postgres_schema,
     hash_password,
     issue_access_token,
     normalize_email,
@@ -35,6 +36,7 @@ from main import (
     settings,
     revoke_access_token,
     bearer_scheme,
+    psycopg,
 )
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -55,14 +57,73 @@ def ensure_message_schema() -> None:
                 recipient_id TEXT NOT NULL REFERENCES nurses(id) ON DELETE CASCADE,
                 body TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                delivered_at TEXT
+                delivered_at TEXT,
+                sync_status TEXT NOT NULL DEFAULT 'pending_sync'
             )
             """
         )
+        try:
+            connection.execute(
+                "ALTER TABLE nurse_messages ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'pending_sync'"
+            )
+        except sqlite3.OperationalError:
+            pass
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_nurse_messages_conversation "
             "ON nurse_messages(sender_id, recipient_id, created_at)"
         )
+
+
+def sync_local_messages() -> int:
+    if not settings.database_url or psycopg is None:
+        return 0
+
+    ensure_message_schema()
+    ensure_postgres_schema()
+    with sqlite3.connect(AUTH_DATABASE_PATH) as local_connection:
+        local_connection.row_factory = sqlite3.Row
+        rows = local_connection.execute(
+            "SELECT id, sender_id, recipient_id, body, created_at, delivered_at "
+            "FROM nurse_messages WHERE sync_status = 'pending_sync' ORDER BY created_at, id"
+        ).fetchall()
+
+    if not rows:
+        return 0
+
+    with psycopg.connect(settings.database_url, connect_timeout=15) as remote_connection:
+        for row in rows:
+            remote_connection.execute(
+                """
+                INSERT INTO nurse_messages
+                    (id, sender_id, recipient_id, body, created_at, delivered_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE SET
+                    sender_id = EXCLUDED.sender_id,
+                    recipient_id = EXCLUDED.recipient_id,
+                    body = EXCLUDED.body,
+                    created_at = EXCLUDED.created_at,
+                    delivered_at = EXCLUDED.delivered_at
+                """,
+                (
+                    row["id"],
+                    row["sender_id"],
+                    row["recipient_id"],
+                    row["body"],
+                    datetime.fromisoformat(row["created_at"]),
+                    datetime.fromisoformat(row["delivered_at"]) if row["delivered_at"] else None,
+                ),
+            )
+
+    with sqlite3.connect(AUTH_DATABASE_PATH) as local_connection:
+        updated = local_connection.executemany(
+            """
+            UPDATE nurse_messages
+            SET sync_status = 'synced'
+            WHERE id = ? AND delivered_at IS ? AND sync_status = 'pending_sync'
+            """,
+            [(row["id"], row["delivered_at"]) for row in rows],
+        )
+    return updated.rowcount
 
 
 def require_message_contact(contact_id: str, account_id: str) -> None:
@@ -98,14 +159,14 @@ def list_nurse_messages(
     now = datetime.now(timezone.utc).isoformat()
     with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
         connection.execute(
-            "UPDATE nurse_messages SET delivered_at = ? "
+            "UPDATE nurse_messages SET delivered_at = ?, sync_status = 'pending_sync' "
             "WHERE sender_id = ? AND recipient_id = ? AND delivered_at IS NULL",
             (now, nurse_id, account["id"]),
         )
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
             """
-            SELECT id, sender_id, recipient_id, body, created_at, delivered_at
+            SELECT id, sender_id, recipient_id, body, created_at, delivered_at, sync_status
             FROM nurse_messages
             WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)
             ORDER BY created_at, id
@@ -120,7 +181,7 @@ def list_nurse_messages(
             "body": row["body"],
             "createdAt": row["created_at"],
             "deliveredAt": row["delivered_at"],
-            "syncStatus": "synced",
+            "syncStatus": row["sync_status"],
         }
         for row in rows
     ]
@@ -144,12 +205,12 @@ def send_nurse_message(
         "body": body,
         "createdAt": datetime.now(timezone.utc).isoformat(),
         "deliveredAt": None,
-        "syncStatus": "synced",
+        "syncStatus": "pending_sync",
     }
     with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
         connection.execute(
-            "INSERT INTO nurse_messages (id, sender_id, recipient_id, body, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO nurse_messages (id, sender_id, recipient_id, body, created_at, sync_status) "
+            "VALUES (?, ?, ?, ?, ?, 'pending_sync')",
             (message["id"], account["id"], nurse_id, body, message["createdAt"]),
         )
     return message

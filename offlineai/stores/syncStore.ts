@@ -38,13 +38,14 @@ export const useSyncStore = create<SyncStore>((set) => ({
     try {
       let status = await getSyncStatus();
       let syncError: string | null = null;
+      const hasQueuedRecords = status.pending > 0 || status.conflicts > 0;
       set({
         isBackendConfigured: status.postgresConfigured,
         isOnline: true,
-        isSyncing: status.postgresConfigured,
+        isSyncing: status.postgresConfigured && hasQueuedRecords,
       });
 
-      if (status.postgresConfigured) {
+      if (status.postgresConfigured && hasQueuedRecords) {
         try {
           await syncPendingAssessments();
         } catch (error) {

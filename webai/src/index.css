@@ -308,7 +308,7 @@ td strong { color: #37453e; font-size: 10px; }
 .login-form input { height: 42px; padding: 0 12px; border: 1px solid #dce3db; border-radius: 5px; background: #fff; font-size: 12px; }
 .login-submit { width: 100%; margin-top: 12px; }
 .login-footnote { margin-top: 22px; color: #949e96; font-size: 9px; }
-.login-art { min-height: 100vh; position: relative; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; padding: 34px 38px; color: white; background-color: #225849; background-image: repeating-linear-gradient(135deg, transparent 0, transparent 45px, rgba(255,255,255,.035) 46px, rgba(255,255,255,.035) 47px); }
+.login-art { min-height: 100vh; position: relative; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; padding: 34px 38px; color: white; background-color: #225849; background-image: linear-gradient(rgba(7,27,29,.34), rgba(7,27,29,.48)), url('./assets/doctor.jpg'); background-position: center; background-size: cover; }
 .login-art::after { content: ''; position: absolute; width: 380px; height: 380px; right: -90px; bottom: 11%; border: 1px solid rgba(255,255,255,.12); border-radius: 50%; box-shadow: 0 0 0 42px rgba(255,255,255,.025), 0 0 0 84px rgba(255,255,255,.02); }
 .art-stamp, .art-bottom { position: relative; z-index: 1; font: 500 10px 'DM Mono', monospace; letter-spacing: 0; }
 .art-stamp { color: #d2e4d8; }
@@ -386,7 +386,9 @@ td strong { color: #37453e; font-size: 10px; }
 	.login-layout { display: block; }
 	.login-panel { width: min(390px, calc(100% - 40px)); min-height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 40px 0; }
 	.login-panel h1 { font-size: 38px; }
-	.login-art { display: none; }
+	.login-panel { min-height: auto; }
+	.login-art { min-height: 230px; padding: 24px; }
+	.art-quote { font-size: clamp(32px, 9vw, 44px); }
 }
 
 :root {

@@ -46,10 +46,10 @@ the API returns `pending_sync` until the row is uploaded to Neon. Use the pooled
 Neon URL for runtime requests and a direct, non-pooled URL for migrations.
 Both web and mobile clients retry `/api/sync/run` when the app opens, resumes, or
 regains connectivity, and every second while online. A sync pass uploads every
-queued local assessment and patient, regardless of which nurse is currently
-signed in; administrator accounts can also check status and trigger this sync.
-Failed uploads stay queued in SQLite and become eligible for retry after one
-second.
+queued local nurse, assessment, patient, and nurse message, regardless of which
+nurse is currently signed in; administrator accounts can also check status and
+trigger this sync. Failed uploads stay queued in SQLite and become eligible for
+retry after one second.
 
 The current artifact is `logistic-single-symptom-2`. It compares all disease
 classes when at least one recognized symptom is supplied and returns ranked

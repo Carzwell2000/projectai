@@ -12,7 +12,7 @@ import threading
 import time
 import urllib.request
 from uuid import uuid4
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -765,6 +765,25 @@ def ensure_postgres_schema() -> None:
         connection.execute("ALTER TABLE patients ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT ''")
         connection.execute(
             """
+            CREATE TABLE IF NOT EXISTS nurse_messages (
+                id TEXT PRIMARY KEY NOT NULL,
+                sender_id TEXT NOT NULL,
+                recipient_id TEXT NOT NULL,
+                body TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL,
+                delivered_at TIMESTAMPTZ
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_nurse_messages_conversation "
+            "ON nurse_messages(sender_id, recipient_id, created_at)"
+        )
+        connection.execute(
+            "ALTER TABLE nurse_messages ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ"
+        )
+        connection.execute(
+            """
             CREATE TABLE IF NOT EXISTS sync_conflicts (
                 record_type TEXT NOT NULL,
                 record_id TEXT NOT NULL,
@@ -1023,42 +1042,98 @@ def sync_postgres_assessments_to_local(nurse_id: str) -> int:
     return imported
 
 
+def sync_postgres_nurse(connection: Any, row: sqlite3.Row) -> None:
+    email = normalize_email(row["email"])
+    email_matches = connection.execute(
+        "SELECT id FROM nurses WHERE lower(trim(email)) = %s",
+        (email,),
+    ).fetchall()
+    if len(email_matches) > 1:
+        raise SyncConflictError(
+            "Multiple PostgreSQL nurse accounts match a local email; resolve the duplicate accounts before syncing."
+        )
+
+    id_owner = connection.execute(
+        "SELECT email FROM nurses WHERE id = %s",
+        (row["id"],),
+    ).fetchone()
+    if id_owner is not None and normalize_email(id_owner[0]) != email:
+        raise SyncConflictError(
+            "A PostgreSQL nurse ID belongs to a different email; resolve the account conflict before syncing."
+        )
+
+    existing_id = email_matches[0][0] if email_matches else None
+    if existing_id is not None and existing_id != row["id"]:
+        if id_owner is not None:
+            raise SyncConflictError(
+                "Duplicate PostgreSQL nurse accounts prevent account ID reconciliation."
+            )
+        connection.execute(
+            "UPDATE assessments SET nurse_id = %s WHERE nurse_id = %s",
+            (row["id"], existing_id),
+        )
+        connection.execute(
+            "UPDATE patients SET nurse_id = %s WHERE nurse_id = %s",
+            (row["id"], existing_id),
+        )
+        connection.execute(
+            "UPDATE nurse_messages SET sender_id = %s WHERE sender_id = %s",
+            (row["id"], existing_id),
+        )
+        connection.execute(
+            "UPDATE nurse_messages SET recipient_id = %s WHERE recipient_id = %s",
+            (row["id"], existing_id),
+        )
+        connection.execute(
+            """
+            UPDATE nurses
+            SET id = %s, email = %s, name = %s, password_hash = %s, role = %s
+            WHERE id = %s
+            """,
+            (row["id"], email, row["name"], row["password_hash"], row["role"], existing_id),
+        )
+        return
+
+    connection.execute(
+        """
+        INSERT INTO nurses (id, email, name, password_hash, created_at, role)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (id) DO UPDATE SET
+            email = EXCLUDED.email,
+            name = EXCLUDED.name,
+            password_hash = EXCLUDED.password_hash,
+            role = EXCLUDED.role
+        """,
+        (
+            row["id"],
+            email,
+            row["name"],
+            row["password_hash"],
+            row["created_at"],
+            row["role"],
+        ),
+    )
+
+
 def sync_local_nurses(nurse_id: str | None = None) -> int:
     if not settings.database_url or psycopg is None or not should_attempt_postgres_sync():
         return 0
 
     ensure_auth_schema()
     ensure_postgres_schema()
-    with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
-        connection.row_factory = sqlite3.Row
-        query = "SELECT * FROM nurses"
-        parameters: tuple[Any, ...] = ()
-        if nurse_id:
-            query += " WHERE id = ?"
-            parameters = (nurse_id,)
-        rows = connection.execute(query, parameters).fetchall()
+    with closing(sqlite3.connect(AUTH_DATABASE_PATH)) as connection:
+        with connection:
+            connection.row_factory = sqlite3.Row
+            query = "SELECT * FROM nurses"
+            parameters: tuple[Any, ...] = ()
+            if nurse_id:
+                query += " WHERE id = ?"
+                parameters = (nurse_id,)
+            rows = connection.execute(query, parameters).fetchall()
 
     with psycopg.connect(settings.database_url, connect_timeout=15) as connection:
         for row in rows:
-            connection.execute(
-                """
-                INSERT INTO nurses (id, email, name, password_hash, created_at, role)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (id) DO UPDATE SET
-                    email = EXCLUDED.email,
-                    name = EXCLUDED.name,
-                    password_hash = EXCLUDED.password_hash,
-                    role = EXCLUDED.role
-                """,
-                (
-                    row["id"],
-                    row["email"],
-                    row["name"],
-                    row["password_hash"],
-                    row["created_at"],
-                    row["role"],
-                ),
-            )
+            sync_postgres_nurse(connection, row)
     reset_postgres_sync_backoff()
     return len(rows)
 

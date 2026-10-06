@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
+from routes.auth import ensure_message_schema, sync_local_messages
 from main import (
     AssessmentRequest,
     AssessmentSyncRequest,
@@ -203,6 +204,7 @@ def list_assessments(
 def sync_status(_account: dict[str, str] = Depends(get_current_account)) -> dict[str, Any]:
     ensure_local_schema()
     ensure_patients_schema()
+    ensure_message_schema()
     with sqlite3.connect(LOCAL_DATABASE_PATH) as connection:
         pending = connection.execute(
             "SELECT COUNT(*) FROM assessments WHERE sync_status = 'pending_sync'"
@@ -225,12 +227,21 @@ def sync_status(_account: dict[str, str] = Depends(get_current_account)) -> dict
         patient_synced = connection.execute(
             "SELECT COUNT(*) FROM patients WHERE sync_status = 'synced'"
         ).fetchone()[0]
+    with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
+        message_pending = connection.execute(
+            "SELECT COUNT(*) FROM nurse_messages WHERE sync_status = 'pending_sync'"
+        ).fetchone()[0]
+        message_total = connection.execute("SELECT COUNT(*) FROM nurse_messages").fetchone()[0]
+        message_synced = connection.execute(
+            "SELECT COUNT(*) FROM nurse_messages WHERE sync_status = 'synced'"
+        ).fetchone()[0]
     return {
-        "total": total + patient_total,
-        "pending": pending + patient_pending,
+        "total": total + patient_total + message_total,
+        "pending": pending + patient_pending + message_pending,
         "pendingAssessments": pending,
         "pendingPatients": patient_pending,
-        "synced": synced + patient_synced,
+        "pendingMessages": message_pending,
+        "synced": synced + patient_synced + message_synced,
         "conflicts": conflicts + patient_conflicts,
         "postgresConfigured": bool(settings.database_url and psycopg is not None),
     }
@@ -240,7 +251,7 @@ def sync_status(_account: dict[str, str] = Depends(get_current_account)) -> dict
 def run_sync(account: dict[str, str] = Depends(get_current_account)) -> dict[str, int]:
     """Upload pending SQLite records when PostgreSQL is available."""
     if not settings.database_url or psycopg is None:
-        return {"nurses": 0, "assessments": 0, "patients": 0}
+        return {"nurses": 0, "assessments": 0, "patients": 0, "messages": 0}
     if not should_attempt_postgres_sync():
         raise HTTPException(
             status_code=503,
@@ -252,6 +263,7 @@ def run_sync(account: dict[str, str] = Depends(get_current_account)) -> dict[str
         assessments = sync_local_assessments()
         downloaded_assessments = sync_postgres_assessments_to_local(account["id"])
         patients = sync_local_patients()
+        messages = sync_local_messages()
     except Exception as error:
         if should_attempt_postgres_sync():
             defer_postgres_sync()
@@ -268,6 +280,7 @@ def run_sync(account: dict[str, str] = Depends(get_current_account)) -> dict[str
         "assessments": assessments + downloaded_assessments,
         "downloadedAssessments": downloaded_assessments,
         "patients": patients,
+        "messages": messages,
     }
 
 

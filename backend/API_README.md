@@ -29,7 +29,7 @@ physical device. The API accepts these routes:
 - `GET /api/assessments` returns local assessment history.
 - `GET /api/assessments/{id}` returns one assessment.
 - `POST /api/assessments/sync` processes queued assessment requests.
-- `POST /api/sync/run` uploads pending SQLite records to PostgreSQL when configured.
+- `POST /api/sync/run` uploads pending nurses, assessments, patients, and messages to PostgreSQL when configured.
 - `GET /api/sync/status` returns local pending and synced counts.
 
 Assessment requests use this shape:

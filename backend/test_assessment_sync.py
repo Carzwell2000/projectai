@@ -4,6 +4,7 @@ import logging
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +20,9 @@ class FakeCursor:
 
     def fetchall(self):
         return self.rows
+
+    def fetchone(self):
+        return self.rows[0] if self.rows else None
 
 
 class FakePostgresConnection:
@@ -43,6 +47,36 @@ class FakePsycopg:
 
     def connect(self, *_args, **_kwargs):
         return FakePostgresConnection(self.rows)
+
+
+class FakeNurseSyncConnection:
+    def __init__(self, existing_id, id_owner=None):
+        self.existing_id = existing_id
+        self.id_owner = id_owner
+        self.queries = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def execute(self, query, parameters):
+        self.queries.append((" ".join(query.split()), parameters))
+        normalized_query = " ".join(query.split()).lower()
+        if "where lower(trim(email))" in normalized_query:
+            return FakeCursor([(self.existing_id,)] if self.existing_id else [])
+        if "select email from nurses where id" in normalized_query:
+            return FakeCursor([self.id_owner] if self.id_owner else [])
+        return FakeCursor([])
+
+
+class FakeNurseSyncPsycopg:
+    def __init__(self, connection):
+        self.connection = connection
+
+    def connect(self, *_args, **_kwargs):
+        return self.connection
 
 
 def postgres_assessment(assessment_id, patient_name):
@@ -88,6 +122,81 @@ class AssessmentSyncTests(unittest.TestCase):
             self.assertTrue(main.should_attempt_postgres_sync())
 
         main.reset_postgres_sync_backoff()
+
+    def test_nurse_sync_reconciles_existing_email_with_a_new_local_id(self):
+        with tempfile.TemporaryDirectory() as temp_directory:
+            database_path = Path(temp_directory) / "nurses.sqlite"
+            with closing(sqlite3.connect(database_path)) as connection:
+                with connection:
+                    connection.execute(
+                        """
+                        CREATE TABLE nurses (
+                            id TEXT PRIMARY KEY,
+                            email TEXT NOT NULL,
+                            name TEXT NOT NULL,
+                            password_hash TEXT NOT NULL,
+                            created_at TEXT NOT NULL,
+                            role TEXT NOT NULL
+                        )
+                        """
+                    )
+                    connection.execute(
+                        "INSERT INTO nurses VALUES (?, ?, ?, ?, ?, ?)",
+                        (
+                            "local-nurse",
+                            "nurse@example.test",
+                            "Nurse",
+                            "password-hash",
+                            "2026-10-01T00:00:00+00:00",
+                            "nurse",
+                        ),
+                    )
+
+            remote = FakeNurseSyncConnection(existing_id="old-nurse")
+            with (
+                mock.patch.object(main, "AUTH_DATABASE_PATH", database_path),
+                mock.patch.object(main, "settings", SimpleNamespace(database_url="postgresql://test")),
+                mock.patch.object(main, "psycopg", FakeNurseSyncPsycopg(remote)),
+                mock.patch.object(main, "ensure_auth_schema"),
+                mock.patch.object(main, "ensure_postgres_schema"),
+                mock.patch.object(main, "should_attempt_postgres_sync", return_value=True),
+            ):
+                self.assertEqual(main.sync_local_nurses(), 1)
+
+            self.assertIn(
+                (
+                    "UPDATE assessments SET nurse_id = %s WHERE nurse_id = %s",
+                    ("local-nurse", "old-nurse"),
+                ),
+                remote.queries,
+            )
+            self.assertIn(
+                (
+                    "UPDATE patients SET nurse_id = %s WHERE nurse_id = %s",
+                    ("local-nurse", "old-nurse"),
+                ),
+                remote.queries,
+            )
+            self.assertTrue(any(query.startswith("UPDATE nurses SET id = %s") for query, _ in remote.queries))
+
+    def test_nurse_sync_rejects_reusing_another_accounts_remote_id(self):
+        row = {
+            "id": "local-nurse",
+            "email": "nurse@example.test",
+            "name": "Nurse",
+            "password_hash": "password-hash",
+            "created_at": "2026-10-01T00:00:00+00:00",
+            "role": "nurse",
+        }
+        remote = FakeNurseSyncConnection(
+            existing_id="old-nurse",
+            id_owner=("different@example.test",),
+        )
+
+        with self.assertRaises(main.SyncConflictError):
+            main.sync_postgres_nurse(remote, row)
+
+        self.assertFalse(any("UPDATE nurses" in query for query, _ in remote.queries))
 
     def test_remote_assessments_import_only_when_missing_locally(self):
         with tempfile.TemporaryDirectory() as temp_directory:
@@ -165,18 +274,21 @@ class AssessmentSyncTests(unittest.TestCase):
             mock.patch.object(assessments, "sync_local_assessments", return_value=4) as sync_assessments,
             mock.patch.object(assessments, "sync_postgres_assessments_to_local", return_value=1),
             mock.patch.object(assessments, "sync_local_patients", return_value=3) as sync_patients,
+            mock.patch.object(assessments, "sync_local_messages", return_value=2) as sync_messages,
             mock.patch.object(assessments, "reset_postgres_sync_backoff") as reset_backoff,
         ):
             result = assessments.run_sync({"id": "nurse-1"})
 
         sync_assessments.assert_called_once_with()
         sync_patients.assert_called_once_with()
+        sync_messages.assert_called_once_with()
         reset_backoff.assert_called_once_with()
         self.assertEqual(result, {
             "nurses": 2,
             "assessments": 5,
             "downloadedAssessments": 1,
             "patients": 3,
+            "messages": 2,
         })
 
     def test_sync_run_surfaces_neon_failures_and_keeps_retry_queued(self):
