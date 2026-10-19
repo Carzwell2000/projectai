@@ -382,6 +382,7 @@ function App() {
           explanation={assessmentExplanation}
           explanationPending={assessmentExplanationPending}
           explanationError={assessmentExplanationError}
+          isPrimaryHealthcare={session?.nurse?.role === 'primary_healthcare'}
           onNavigate={setView}
         />
       )

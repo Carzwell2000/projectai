@@ -51,9 +51,10 @@ api.interceptors.response.use(
 	},
 );
 
-export type Nurse = { id: string; email: string; name: string; role: "nurse" | "admin" };
+export type StaffRole = "nurse" | "primary_healthcare";
+export type Nurse = { id: string; email: string; name: string; role: StaffRole | "admin" };
 export type AuthResponse = { accessToken: string; nurse: Nurse };
-export type AuthCredentials = { email: string; name?: string; password: string };
+export type AuthCredentials = { email: string; name?: string; password: string; role?: StaffRole };
 
 export async function login(credentials: Pick<AuthCredentials, "email" | "password">): Promise<AuthResponse> {
 	try {
@@ -180,7 +181,7 @@ export type PredictionResult = {
 	confidence: number;
 	predictions: Prediction[];
 	recognizedSymptoms: string[];
-	recommendation: string;
+	recommendation?: string;
 	modelVersion: string;
 	status: string;
 };
@@ -202,7 +203,7 @@ export type AssessmentExplanation = PredictionResult & {
 	predictedDiseases: {
 		disease: string;
 		confidence: number;
-		recommendation: string;
+		recommendation?: string;
 		features: {
 			feature: string;
 			contribution: number;

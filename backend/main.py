@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager, closing
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 
 base_site_packages = Path(sys.base_prefix) / "Lib" / "site-packages"
@@ -109,6 +109,7 @@ class NurseSignupRequest(BaseModel):
     email: str = Field(min_length=3, max_length=200)
     name: str = Field(min_length=2, max_length=120)
     password: str = Field(min_length=8, max_length=200)
+    role: Literal["nurse", "primary_healthcare"] = "nurse"
 
 
 class NurseLoginRequest(BaseModel):
@@ -267,9 +268,24 @@ def get_current_nurse(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> dict[str, str]:
     nurse = get_current_account(credentials)
-    if nurse["role"] != "nurse":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Nurse access required.")
+    if nurse["role"] not in {"nurse", "primary_healthcare"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Clinical staff access required.")
     return nurse
+
+
+def for_staff_role(response: dict[str, Any], role: str) -> dict[str, Any]:
+    if role != "primary_healthcare":
+        return response
+
+    visible_response = response.copy()
+    for key in ("recommendation", "triage", "clinicalSignals"):
+        visible_response.pop(key, None)
+    if "predictedDiseases" in visible_response:
+        visible_response["predictedDiseases"] = [
+            {key: value for key, value in prediction.items() if key != "recommendation"}
+            for prediction in visible_response["predictedDiseases"]
+        ]
+    return visible_response
 
 
 def get_current_admin(

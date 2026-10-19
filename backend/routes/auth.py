@@ -252,10 +252,10 @@ def create_nurse(
             raise HTTPException(status_code=409, detail="An account with this email already exists.")
         nurse_id = f"nurse-{uuid4().hex}"
         connection.execute(
-            "INSERT INTO nurses (id, email, name, password_hash, created_at, role) VALUES (?, ?, ?, ?, ?, 'nurse')",
-            (nurse_id, email, request.name.strip(), hash_password(request.password), datetime.now(timezone.utc).isoformat()),
+            "INSERT INTO nurses (id, email, name, password_hash, created_at, role) VALUES (?, ?, ?, ?, ?, ?)",
+            (nurse_id, email, request.name.strip(), hash_password(request.password), datetime.now(timezone.utc).isoformat(), request.role),
         )
-    return {"id": nurse_id, "email": email, "name": request.name.strip(), "role": "nurse"}
+    return {"id": nurse_id, "email": email, "name": request.name.strip(), "role": request.role}
 
 
 @router.get("/nurses")
@@ -264,7 +264,8 @@ def list_nurses(_: dict[str, str] = Depends(get_current_admin)) -> list[dict[str
     with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
-            "SELECT id, email, name, role, created_at FROM nurses WHERE role = 'nurse' ORDER BY name"
+            "SELECT id, email, name, role, created_at FROM nurses "
+            "WHERE role IN ('nurse', 'primary_healthcare') ORDER BY name"
         ).fetchall()
     return [dict(row) for row in rows]
 
@@ -430,7 +431,7 @@ def delete_nurse(
         ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="Nurse account not found.")
-        if row[0] != "nurse":
+        if row[0] not in {"nurse", "primary_healthcare"}:
             raise HTTPException(status_code=400, detail="The administrator account cannot be deleted.")
         connection.execute("DELETE FROM nurses WHERE id = ?", (nurse_id,))
     return {"status": "nurse_deleted"}

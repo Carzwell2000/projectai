@@ -1,7 +1,7 @@
 import { FiAlertCircle, FiClock, FiUser } from 'react-icons/fi'
 import DiseaseExplanationCard from './DiseaseExplanationCard'
 
-function AssessmentResult({ result, explanation, explanationPending, explanationError, selectedPatientAge }) {
+function AssessmentResult({ result, explanation, explanationPending, explanationError, selectedPatientAge, isPrimaryHealthcare }) {
   if (!result) return null
   const hasSupportedPrediction = result.status === 'prediction' && (result.confidence || 0) >= 0.01
   const explainedDiseases = hasSupportedPrediction
@@ -37,7 +37,7 @@ function AssessmentResult({ result, explanation, explanationPending, explanation
         </div>
       </div>
 
-      {result.triage && (
+      {!isPrimaryHealthcare && result.triage && (
         <section className={`triage-card triage-${result.triage.level}`} aria-label="Triage priority">
           <div className="triage-heading">
             <p className="eyebrow">TRIAGE PRIORITY</p>
@@ -61,20 +61,22 @@ function AssessmentResult({ result, explanation, explanationPending, explanation
         </section>
       )}
 
-      {explanationPending && <p className="explanation-status" role="status">Loading model explanations…</p>}
-      {explanationError && <p className="form-error" role="status">Assessment saved. Explanation unavailable: {explanationError}</p>}
+      {explanationPending && <p className="explanation-status" role="status">{isPrimaryHealthcare ? 'Loading additional disease predictions…' : 'Loading model explanations…'}</p>}
+      {!isPrimaryHealthcare && explanationError && <p className="form-error" role="status">Assessment saved. Explanation unavailable: {explanationError}</p>}
       <section className="disease-explanations" aria-label="Model disease explanations">
         {explainedDiseases.length ? (
-          explainedDiseases.map((disease) => <DiseaseExplanationCard disease={disease} key={disease.disease} />)
+            explainedDiseases.map((disease) => <DiseaseExplanationCard disease={disease} showClinicalDetails={!isPrimaryHealthcare} key={disease.disease} />)
         ) : (
           <DiseaseExplanationCard disease={{
           disease: hasSymptomSupportedPrediction ? result.disease : 'Insufficient evidence',
             confidence: hasSymptomSupportedPrediction ? result.confidence : 0,
-            recommendation: hasSymptomSupportedPrediction
+              recommendation: !isPrimaryHealthcare && hasSymptomSupportedPrediction
               ? result.recommendation || 'Review this result with a qualified healthcare professional.'
-              : result.recommendation || 'The reported symptoms do not provide enough evidence for a reliable match. Record more specific symptoms and review the case with a qualified healthcare professional.',
-            features: hasSymptomSupportedPrediction ? explanation?.features || [] : [],
-          }} />
+                : !isPrimaryHealthcare
+                  ? result.recommendation || 'The reported symptoms do not provide enough evidence for a reliable match. Record more specific symptoms and review the case with a qualified healthcare professional.'
+                  : '',
+              features: hasSymptomSupportedPrediction ? explanation?.features || [] : [],
+            }} showClinicalDetails={!isPrimaryHealthcare} />
         )}
         </section>
     </section>

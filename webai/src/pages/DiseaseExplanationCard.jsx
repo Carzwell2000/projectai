@@ -1,4 +1,4 @@
-function DiseaseExplanationCard({ disease }) {
+function DiseaseExplanationCard({ disease, showClinicalDetails = true }) {
   const features = (disease.features || []).filter((feature) =>
     feature.direction === 'supports' || feature.feature.toLowerCase().includes('temperature'))
   const maximumContribution = Math.max(
@@ -13,15 +13,15 @@ function DiseaseExplanationCard({ disease }) {
         <span className="disease-confidence">{Math.round((disease.confidence || 0) * 100)}%</span>
       </header>
 
-      {disease.recommendation && (
+      {showClinicalDetails && disease.recommendation && (
         <div className="disease-recommendation">
           <p className="eyebrow tiny">RECOMMENDATION</p>
           <p>{disease.recommendation}</p>
         </div>
       )}
 
-      <p className="disease-why">Why this disease.</p>
-      {features.length > 0 && (
+      {showClinicalDetails && <p className="disease-why">Why this disease.</p>}
+      {showClinicalDetails && features.length > 0 && (
         <ul className="disease-feature-list">
           {features.map((feature) => {
             const impact = Math.max(

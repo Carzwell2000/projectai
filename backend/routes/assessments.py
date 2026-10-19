@@ -29,6 +29,7 @@ from main import (
     defer_postgres_sync,
     reset_postgres_sync_backoff,
     get_current_account,
+    for_staff_role,
 )
 from rule_engine import infer_triage
 
@@ -139,8 +140,16 @@ def process_assessment(request: AssessmentRequest, nurse_id: str) -> dict[str, A
 
 
 @router.post("/triage")
-def triage_assessment(request: AssessmentRequest) -> dict[str, Any]:
+def triage_assessment(
+    request: AssessmentRequest,
+    account: dict[str, str] = Depends(get_current_account),
+) -> dict[str, Any]:
     """Return deterministic triage without persisting an encounter."""
+    if account["role"] == "primary_healthcare":
+        raise HTTPException(
+            status_code=403,
+            detail="Triage recommendations are not available for this account.",
+        )
     return infer_triage(
         age=request.age,
         temperature=request.temperature,
@@ -165,7 +174,7 @@ def create_assessment(
             request.createdAt or datetime.now(timezone.utc),
             nurse["id"],
         )
-    return response
+    return for_staff_role(response, nurse["role"])
 
 
 @router.post("/assessments/sync")
@@ -173,7 +182,10 @@ def sync_assessments(
     request: AssessmentSyncRequest,
     nurse: dict[str, str] = Depends(get_current_nurse),
 ) -> dict[str, Any]:
-    synced = [process_assessment(assessment, nurse["id"]) for assessment in request.assessments]
+    synced = [
+        for_staff_role(process_assessment(assessment, nurse["id"]), nurse["role"])
+        for assessment in request.assessments
+    ]
     try:
         sync_local_assessments(nurse["id"])
     except Exception as error:
@@ -196,7 +208,10 @@ def list_assessments(
 ) -> dict[str, Any]:
     # SQLite is the local source of truth. PostgreSQL sync is optional and
     # should not hide records from the local FastAPI database.
-    assessments = local_assessment_rows(limit, nurse["id"])
+    assessments = [
+        for_staff_role(assessment, nurse["role"])
+        for assessment in local_assessment_rows(limit, nurse["id"])
+    ]
     return {"count": len(assessments), "assessments": assessments}
 
 
@@ -303,4 +318,4 @@ def get_assessment(assessment_id: str, nurse: dict[str, str] = Depends(get_curre
             "SELECT name FROM nurses WHERE id = ?", (row["nurse_id"],)
         ).fetchone()
     assessment["nurse_name"] = nurse_row[0] if nurse_row else "Unknown nurse"
-    return assessment
+    return for_staff_role(assessment, nurse["role"])

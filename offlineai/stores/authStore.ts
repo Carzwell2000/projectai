@@ -5,7 +5,7 @@ type AuthSession = { accessToken: string; nurse: Nurse };
 
 type AuthStore = {
   session: AuthSession | null;
-  login: (credentials: Pick<AuthCredentials, "email" | "password">) => Promise<"local">;
+  login: (credentials: Pick<AuthCredentials, "email" | "password">, expectedRole?: Nurse["role"]) => Promise<"local">;
   signup: (credentials: AuthCredentials) => Promise<"local">;
   logout: () => Promise<void>;
   clearSession: () => void;
@@ -14,10 +14,13 @@ type AuthStore = {
 export const useAuthStore = create<AuthStore>((set) => ({
   session: null,
 
-  login: async (credentials) => {
+  login: async (credentials, expectedRole) => {
     await healthCheck();
     const response = await loginOnline(credentials);
     const session = response;
+    if (expectedRole && session.nurse.role !== expectedRole) {
+      throw new Error("This account does not have access to the selected portal. Choose the portal that matches your account.");
+    }
     setApiAccessToken(session.accessToken);
     set({ session });
     return "local";

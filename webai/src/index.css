@@ -632,3 +632,77 @@ tbody tr:hover { background: #f8fbf9; }
 		font-size: 10px;
 	}
 }
+
+.login-panel-portals { width: min(510px, calc(100% - 48px)); }
+.portal-selection { width: 100%; }
+.portal-brand {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 25px 24px 27px;
+	border-radius: 22px;
+	background: #102d2b;
+	color: #fff;
+	text-align: center;
+}
+.portal-brand-icon {
+	width: 54px;
+	height: 54px;
+	display: grid;
+	place-items: center;
+	border: 1px solid rgba(255,255,255,.15);
+	border-radius: 16px;
+	background: rgba(255,255,255,.09);
+	color: #7de0c1;
+	font-size: 26px;
+}
+.portal-eyebrow { margin-top: 15px; color: #a9e8d4; font: 700 10px 'DM Mono', monospace; letter-spacing: .2em; }
+.portal-brand h1 { margin: 8px 0 0; color: #fff; font: 600 26px/1.2 'Newsreader', Georgia, serif; }
+.portal-brand p { max-width: 330px; margin: 10px 0 0; color: #d2e3dd; font-size: 12px; line-height: 1.6; }
+.portal-heading { margin: 27px 0 13px; }
+.portal-heading h2 { margin: 0; color: #18312c; font-size: 18px; font-weight: 700; }
+.portal-heading p { margin: 6px 0 0; color: #70827b; font-size: 11px; line-height: 1.5; }
+.portal-list { display: grid; gap: 12px; }
+.portal-card {
+	width: 100%;
+	padding: 15px;
+	border: 1px solid #dfe9e4;
+	border-radius: 15px;
+	background: #fff;
+	box-shadow: 0 5px 16px rgba(24,49,44,.045);
+	text-align: left;
+	transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+.portal-card:hover { transform: translateY(-1px); border-color: #87bba8; box-shadow: 0 8px 20px rgba(24,49,44,.09); }
+.portal-card-content { display: flex; align-items: center; gap: 12px; }
+.portal-card-icon { width: 42px; height: 42px; display: grid; flex: 0 0 auto; place-items: center; border-radius: 12px; background: #e8f4ef; color: #167663; font-size: 19px; }
+.portal-card-copy { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 4px; }
+.portal-card-copy strong { color: #263b33; font-size: 12px; }
+.portal-card-copy > span { color: #738078; font-size: 10px; line-height: 1.5; }
+.portal-card-chevron { flex: 0 0 auto; color: #809087; font-size: 17px; }
+.portal-card-action { min-height: 36px; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 13px; border-radius: 8px; background: #0879e8; color: #fff; font-size: 10px; font-weight: 700; }
+.portal-card-action svg { font-size: 13px; }
+.portal-secure { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 17px 0 0; color: #7d8c83; font-size: 10px; }
+.portal-secure svg { color: #59816e; font-size: 13px; }
+.portal-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 24px; padding: 5px 0; border: 0; background: transparent; color: var(--green); font-size: 10px; font-weight: 700; }
+.portal-back svg { transform: rotate(180deg); font-size: 14px; }
+.explore-landing { width: 100%; }
+.login-layout-explore { position: relative; display: block; width: 100%; height: 100vh; min-height: 100vh; overflow: hidden; background: #102d2b url('./assets/doctor.jpg') center / cover no-repeat; }
+.login-layout-explore::before { position: absolute; inset: 0; content: ''; background: rgba(7,27,29,.28); }
+.login-layout-explore .login-art { display: none; }
+.login-layout-explore .login-panel { position: relative; z-index: 1; display: grid; width: 100%; height: 100%; min-height: 100vh; place-items: end center; padding: 24px; }
+.login-layout-explore .explore-landing { display: grid; width: min(560px, 100%); height: 100%; grid-template-rows: auto 1fr auto; justify-items: center; align-items: end; gap: 24px; }
+.login-layout-explore .explore-title { align-self: start; width: 100%; margin: 0; padding-top: 20px; color: #fff; font: 700 clamp(22px, 3vw, 30px)/1.15 'Newsreader', Georgia, serif; text-align: center; text-shadow: 0 2px 12px rgba(0,0,0,.65); }
+.login-layout-explore .explore-title span { display: block; white-space: nowrap; }
+.explore-button { width: 100%; min-height: 50px; display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0; border: 0; border-radius: 10px; background: var(--green); color: white; font-size: 12px; font-weight: 700; box-shadow: 0 8px 24px rgba(0,0,0,.2); transition: background .16s ease, transform .16s ease; }
+.explore-button:hover { transform: translateY(-1px); background: var(--green-dark); }
+.explore-button svg { font-size: 15px; }
+.explore-back { margin-top: 15px; }
+
+@media (max-width: 760px) {
+	.login-panel.login-panel-portals { width: min(510px, calc(100% - 40px)); padding: 26px 0; }
+	.portal-brand { padding: 22px 18px; }
+	.portal-brand h1 { font-size: 24px; }
+	.login-layout-explore .login-panel { width: 100%; min-height: 100vh; padding: 20px; }
+	.login-layout-explore .explore-title { font-size: clamp(19px, 6vw, 24px); }
+}

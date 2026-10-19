@@ -26,6 +26,7 @@ import {
   listNurses,
   type AdminAnalytics,
   type RegisteredNurse,
+  type StaffRole,
 } from "../services/api";
 
 import { useAuthStore } from "../stores/authStore";
@@ -69,6 +70,7 @@ export default function Admin() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [accountRole, setAccountRole] = useState<StaffRole>("nurse");
 
   /*
   ============================================================
@@ -223,14 +225,16 @@ export default function Admin() {
         name,
         email,
         password,
+        role: accountRole,
       });
 
       setName("");
       setEmail("");
       setPassword("");
+      setAccountRole("nurse");
 
       setMessage(
-        "Nurse account created successfully."
+        `${accountRole === "nurse" ? "Nurse" : "Primary healthcare"} account created successfully.`
       );
 
       await useSyncStore
@@ -301,9 +305,9 @@ export default function Admin() {
     activePage === "overview"
       ? "Dashboard"
       : activePage === "create"
-        ? "Create Nurse"
+        ? "Create Staff Account"
         : activePage === "registered"
-          ? "Nurse Directory"
+          ? "Staff Directory"
           : "Change Password";
 
   /*
@@ -324,12 +328,12 @@ export default function Admin() {
     },
     {
       page: "create",
-      label: "Create Nurse",
+      label: "Create Staff Account",
       icon: "person-add-outline",
     },
     {
       page: "registered",
-      label: "Nurse Directory",
+      label: "Staff Directory",
       icon: "people-outline",
     },
     {
@@ -561,7 +565,7 @@ export default function Admin() {
                   <Text
                     style={tw`mt-4 text-xl font-bold text-slate-900`}
                   >
-                    Create a nurse account
+                    Create a healthcare staff account
                   </Text>
                 </View>
 
@@ -604,6 +608,24 @@ export default function Admin() {
                     secureTextEntry
                   />
 
+                  <FormLabel label="ACCOUNT TYPE" />
+                  <View style={tw`mt-2 flex-row gap-2`}>
+                    {([
+                      ["nurse", "Nurse"],
+                      ["primary_healthcare", "Primary healthcare"],
+                    ] as const).map(([role, label]) => (
+                      <Pressable
+                        key={role}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: accountRole === role }}
+                        onPress={() => setAccountRole(role)}
+                        style={tw`flex-1 items-center rounded-xl border px-3 py-3 ${accountRole === role ? "border-sky-500 bg-sky-50" : "border-slate-200 bg-white"}`}
+                      >
+                        <Text style={tw`text-sm font-semibold ${accountRole === role ? "text-sky-800" : "text-slate-600"}`}>{label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+
                   {/* BUTTON */}
 
                   <Pressable
@@ -631,7 +653,7 @@ export default function Admin() {
                     >
                       {isSubmitting
                         ? "Creating account..."
-                        : "Create nurse account"}
+                        : `Create ${accountRole === "nurse" ? "nurse" : "primary healthcare"} account`}
                     </Text>
                   </Pressable>
 
@@ -764,7 +786,7 @@ export default function Admin() {
 
               <SectionHeading
                 eyebrow="Directory"
-                title="Registered nurses"
+                title="Healthcare staff accounts"
                 subtitle="Manage healthcare staff accounts"
                 rightContent={
                   <View
@@ -864,7 +886,7 @@ export default function Admin() {
                       <Text
                         style={tw`text-[10px] font-bold text-emerald-700`}
                       >
-                        REGISTERED NURSE
+                        {nurse.role === "primary_healthcare" ? "PRIMARY HEALTHCARE" : "REGISTERED NURSE"}
                       </Text>
                     </View>
                   </View>
