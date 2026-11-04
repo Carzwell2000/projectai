@@ -5,6 +5,16 @@ from pydantic import ValidationError
 import main
 
 
+@pytest.mark.parametrize("symptoms", ["chest pain", "I have chest pain"])
+def test_chest_pain_does_not_match_generic_pain(symptoms):
+    assert main.resolve_symptoms(symptoms) == ["chest pain"]
+    assert main.build_features(symptoms, 37.0).iloc[0]["pain"] == 0.0
+
+
+def test_standalone_pain_remains_a_recognized_symptom():
+    assert main.resolve_symptoms("pain") == ["pain"]
+
+
 def test_low_confidence_prediction_requires_insufficient_evidence(monkeypatch):
     monkeypatch.setattr(main, "resolve_symptoms", lambda value: ["fever"])
 

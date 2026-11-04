@@ -184,6 +184,16 @@ export default function Assess() {
         {/* Navbar */}
         <Navbar variant="hero" />
 
+        <View style={tw`mt-5 rounded-2xl border border-[#CFE5DB] bg-[#EAF5EF] p-4`}>
+          <View style={tw`flex-row items-center`}>
+            <Ionicons name="information-circle-outline" size={20} color="#167663" />
+            <Text style={tw`ml-2 text-sm font-bold text-[#204B3C]`}>What this assessment does</Text>
+          </View>
+          <Text style={tw`mt-2 text-sm leading-5 text-[#526B5F]`}>
+            It compares reported symptoms with patterns in its disease model and checks vital signs for triage warning signs. It suggests possibilities for a healthcare professional to review; it does not diagnose or choose treatment.
+          </Text>
+        </View>
+
         {/* Patient Details */}
         <View
           style={tw`mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}

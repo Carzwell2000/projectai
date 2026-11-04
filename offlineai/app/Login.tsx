@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { AccessibilityInfo, Animated, Easing, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import tw from "twrnc";
+import PortalIllustration from "../Components/PortalIllustration";
 import { getApiErrorMessage, requestPasswordReset, resetPassword } from "../services/api";
 import { useAuthStore } from "../stores/authStore";
 
@@ -15,28 +17,24 @@ const PORTALS: {
   title: string;
   description: string;
   button: string;
-  icon: keyof typeof Ionicons.glyphMap;
 }[] = [
   {
     role: "primary_healthcare",
     title: "Primary Healthcare",
     description: "Access patient assessments and supported results.",
     button: "Enter Primary Healthcare Portal",
-    icon: "medkit-outline",
   },
   {
     role: "nurse",
     title: "Nursing Staff",
     description: "Manage patient care, assessments, and records.",
     button: "Enter Nursing Portal",
-    icon: "people-outline",
   },
   {
     role: "admin",
     title: "Administrator",
     description: "Manage staff accounts and system activity.",
     button: "Enter Admin Portal",
-    icon: "settings-outline",
   },
 ];
 
@@ -53,6 +51,32 @@ export default function Login() {
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isPortalAccessError = message.startsWith("This account does not have access");
+  const headlineAnimations = useRef([new Animated.Value(0), new Animated.Value(0), new Animated.Value(0)]).current;
+
+  useEffect(() => {
+    let isActive = true;
+    const animation = Animated.stagger(
+      140,
+      headlineAnimations.map((value) => Animated.timing(value, {
+        toValue: 1,
+        duration: 650,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      })),
+    );
+    AccessibilityInfo.isReduceMotionEnabled().then((reduceMotion) => {
+      if (!isActive) return;
+      if (reduceMotion) {
+        headlineAnimations.forEach((value) => value.setValue(1));
+      } else {
+        animation.start();
+      }
+    });
+    return () => {
+      isActive = false;
+      animation.stop();
+    };
+  }, [headlineAnimations]);
 
   const submit = async () => {
     setMessage("");
@@ -104,36 +128,71 @@ export default function Login() {
           contentContainerStyle={hasExplored ? tw`pb-8` : tw`flex-grow`}
         >
           {!hasExplored ? (
-            <View style={tw`relative flex-1 justify-end px-5 pb-5`}>
+            <View style={tw`relative flex-1 justify-between px-5 py-6`}>
               <Image
                 source={require("../assets/images/doctor.jpg")}
                 style={StyleSheet.absoluteFill}
                 contentFit="cover"
                 contentPosition="center"
                 transition={250}
-                accessibilityLabel="Doctor in a medical office"
+                accessibilityLabel="Black doctor speaking with a child in a clinic"
               />
-              <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(7, 27, 29, 0.2)" }]} />
-              <Text style={tw`absolute inset-x-5 top-5 text-center text-2xl font-bold tracking-wide text-white`}>
-                Welcome to AI Health Decision Support System
-              </Text>
+              <LinearGradient
+                colors={["rgba(7,27,29,0.48)", "rgba(7,27,29,0.04)", "rgba(7,27,29,0.2)", "rgba(7,27,29,0.84)"]}
+                locations={[0, 0.3, 0.52, 1]}
+                style={StyleSheet.absoluteFill}
+              />
+              <View style={tw`self-start flex-row items-center rounded-full border border-white/30 bg-[#092320]/60 py-2 pl-2 pr-4`}>
+                <View style={tw`h-9 w-9 items-center justify-center rounded-full bg-[#D8F1E6]`}>
+                  <Ionicons name="pulse" size={19} color="#14594B" />
+                </View>
+                <Text style={tw`ml-2 text-[10px] font-bold tracking-widest text-white`}>CLINICAL WORKSPACE</Text>
+              </View>
+              <View style={tw`mb-5 mt-auto`}>
+                <Text style={tw`mb-3 text-[10px] font-bold tracking-widest text-emerald-100`}>
+                  SMARTER SUPPORT. HUMAN JUDGMENT.
+                </Text>
+                <Text
+                  accessibilityRole="header"
+                  accessibilityLabel="AI-assisted clinical care."
+                  style={tw`text-5xl font-bold leading-[52px] tracking-tight text-white`}
+                >
+                  <Animated.Text style={getHeadlineWordStyle(headlineAnimations[0])}>AI-assisted</Animated.Text>
+                  {"\n"}
+                  <Animated.Text style={getHeadlineWordStyle(headlineAnimations[1])}>clinical</Animated.Text>
+                  {" "}
+                  <Animated.Text style={getHeadlineWordStyle(headlineAnimations[2])}>care.</Animated.Text>
+                </Text>
+                <Text style={tw`mt-4 max-w-[360px] text-sm leading-6 text-white`}>
+                  Decision support for healthcare teams, always guided by clinicians.
+                </Text>
+              </View>
               <Pressable
                 accessibilityRole="button"
                 onPress={() => setHasExplored(true)}
                 style={({ pressed }) => [
-                  tw`h-14 flex-row items-center justify-center rounded-2xl bg-teal-700`,
+                  tw`h-14 flex-row items-center justify-between rounded-2xl border border-white/30 bg-[#167663] px-5`,
                   pressed && tw`opacity-80`,
                 ]}
               >
-                <Text style={tw`text-base font-bold text-white`}>Explore portals</Text>
+                <Text style={tw`text-sm font-bold text-white`}>Continue to sign in</Text>
                 <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={tw`ml-2`} />
               </Pressable>
             </View>
           ) : !selectedPortal ? (
-            <View style={tw`flex-1 px-5 pb-8 pt-8`}>
-              <Text style={tw`mb-1 text-2xl font-bold text-slate-950`}>Select a portal</Text>
-              <Text style={tw`mb-5 text-sm leading-5 text-slate-500`}>
-                Select the role associated with your login.
+            <View style={tw`flex-1 bg-[#F5F8F6] px-5 pb-8 pt-7`}>
+              <View style={tw`flex-row items-center rounded-2xl border border-[#E1ECE6] bg-[#F0F8F3] p-3`}>
+                <View style={tw`h-11 w-11 items-center justify-center rounded-xl border border-[#CFE3D8] bg-white`}>
+                  <Ionicons name="pulse" size={21} color="#167663" />
+                </View>
+                <Text style={tw`ml-3 text-[10px] font-bold tracking-widest text-[#537565]`}>CLINICAL WORKSPACE</Text>
+              </View>
+
+              <Text accessibilityRole="header" style={tw`mt-6 text-3xl font-bold leading-9 text-[#18312C]`}>
+                Choose your workspace
+              </Text>
+              <Text style={tw`mb-5 mt-2 text-sm leading-5 text-slate-500`}>
+                Select the role linked to your account to continue securely.
               </Text>
 
               {PORTALS.map((portal) => (
@@ -146,35 +205,40 @@ export default function Login() {
                     setMessage("");
                   }}
                   style={({ pressed }) => [
-                    tw`mb-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm`,
-                    pressed && tw`opacity-80`,
+                    tw`mb-3 rounded-2xl border border-[#E0E9E4] bg-white p-4 shadow-sm`,
+                    pressed && tw`border-[#8DBBA7] opacity-90`,
                   ]}
                 >
                   <View style={tw`flex-row items-center`}>
-                    <View style={tw`h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50`}>
-                      <Ionicons name={portal.icon} size={24} color="#047857" />
+                    <View style={tw`h-[76px] w-[84px] overflow-hidden rounded-xl`}>
+                      <PortalIllustration role={portal.role} />
                     </View>
                     <View style={tw`ml-4 flex-1`}>
-                      <Text style={tw`text-base font-bold text-slate-900`}>{portal.title}</Text>
-                      <Text style={tw`mt-1 text-sm leading-5 text-slate-500`}>{portal.description}</Text>
+                      <Text style={tw`text-sm font-bold text-[#263B33]`}>{portal.title}</Text>
+                      <Text style={tw`mt-1 text-xs leading-5 text-slate-500`}>{portal.description}</Text>
                     </View>
-                    <Ionicons name="chevron-forward" size={20} color="#64748B" />
+                    <Ionicons name="chevron-forward" size={19} color="#809087" />
                   </View>
-                  <View style={tw`mt-4 flex-row items-center justify-center rounded-xl bg-[#0879E8] py-3`}>
-                    <Text style={tw`text-sm font-bold text-white`}>{portal.button}</Text>
-                    <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={tw`ml-2`} />
+                  <View style={tw`mt-3 min-h-9 flex-row items-center justify-between rounded-lg bg-[#F2F7F4] px-3`}>
+                    <Text style={tw`text-xs font-bold text-[#326754]`}>Continue as {portal.title}</Text>
+                    <Ionicons name="arrow-forward" size={15} color="#326754" />
                   </View>
                 </Pressable>
               ))}
 
+              {message ? (
+                <Text accessibilityRole="alert" style={tw`mb-2 text-sm text-rose-700`}>{message}</Text>
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setHasExplored(false)}
+                style={tw`mt-1 self-center rounded-full px-4 py-2`}
+              >
+                <Text style={tw`text-xs font-semibold text-teal-700`}>Back to explore</Text>
+              </Pressable>
               <View style={tw`mt-2 flex-row items-center justify-center`}>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setHasExplored(false)}
-                  style={tw`py-2`}
-                >
-                  <Text style={tw`text-xs font-semibold text-teal-700`}>Back to explore</Text>
-                </Pressable>
+                <Ionicons name="shield-checkmark-outline" size={14} color="#59816E" />
+                <Text style={tw`ml-2 text-[10px] text-slate-500`}>Secure access for authorized clinical staff</Text>
               </View>
             </View>
           ) : (
@@ -347,4 +411,16 @@ export default function Login() {
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
+}
+
+function getHeadlineWordStyle(value: Animated.Value) {
+  return {
+    opacity: value,
+    transform: [{
+      translateY: value.interpolate({
+        inputRange: [0, 1],
+        outputRange: [22, 0],
+      }),
+    }],
+  };
 }

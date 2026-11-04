@@ -77,6 +77,18 @@ export default function Results() {
       <ScrollView contentContainerStyle={tw`px-5 pb-8`} showsVerticalScrollIndicator={false}>
         <Navbar variant="hero" monitorSync={false} showSyncStatus={false} />
 
+        <View style={tw`mt-4 rounded-2xl border border-[#CFE5DB] bg-[#EAF5EF] p-4`}>
+          <View style={tw`flex-row items-center`}>
+            <Ionicons name="information-circle-outline" size={20} color="#167663" />
+            <Text style={tw`ml-2 text-sm font-bold text-[#204B3C]`}>Decision support for clinician review</Text>
+          </View>
+          <Text style={tw`mt-2 text-sm leading-5 text-[#526B5F]`}>
+            {isPrimaryHealthcare
+              ? "The factors below show which recorded symptoms influenced the model's possible match. They do not confirm a disease or measure a patient's risk. Use your training and local guidance when deciding next steps."
+              : "Possible disease matches and triage guidance are based on the information entered. They are not a diagnosis or treatment plan. A qualified healthcare professional should review the findings and decide next steps."}
+          </Text>
+        </View>
+
         <Pressable onPress={() => router.replace("/Assess")} style={tw`mb-5 mt-3 flex-row items-center`}>
           <Ionicons name="arrow-back" size={20} color="#0F766E" />
           <Text style={tw`ml-2 text-sm font-bold text-teal-700`}>Back</Text>
@@ -130,6 +142,7 @@ export default function Results() {
               isLoading={isLoadingExplanation}
               hasError={explanationError}
               showClinicalDetails={!isPrimaryHealthcare}
+              isPrimaryHealthcare={isPrimaryHealthcare}
             />
           </>
         ) : (
@@ -196,7 +209,7 @@ function Vital({ label, value }: { label: string; value: string }) {
   );
 }
 
-function DiseaseExplanations({ explanation, isLoading, hasError, showClinicalDetails }: { explanation: AssessmentExplanation | null; isLoading: boolean; hasError: boolean; showClinicalDetails: boolean }) {
+function DiseaseExplanations({ explanation, isLoading, hasError, showClinicalDetails, isPrimaryHealthcare }: { explanation: AssessmentExplanation | null; isLoading: boolean; hasError: boolean; showClinicalDetails: boolean; isPrimaryHealthcare: boolean }) {
   const diseaseExplanations = explanation?.predictedDiseases ?? [];
 
   if (isLoading) {
@@ -227,38 +240,45 @@ function DiseaseExplanations({ explanation, isLoading, hasError, showClinicalDet
         <Text style={tw`text-xs font-bold uppercase tracking-widest text-slate-500`}>{showClinicalDetails ? "Disease explanations" : "Possible disease predictions"}</Text>
       </View>
       <View style={tw`gap-4`}>
-      {details.map((item) => <DiseaseExplanation key={item.disease} explanation={item} showClinicalDetails={showClinicalDetails} />)}
+      {details.map((item) => <DiseaseExplanation key={item.disease} explanation={item} showClinicalDetails={showClinicalDetails} isPrimaryHealthcare={isPrimaryHealthcare} />)}
       </View>
     </View>
   );
 }
 
-function DiseaseExplanation({ explanation, showClinicalDetails }: { explanation: AssessmentExplanation["predictedDiseases"][number]; showClinicalDetails: boolean }) {
-  const displayedFeatures = explanation.features.filter((item) =>
-    item.direction === "supports" || item.feature.toLowerCase().includes("temperature"));
+function DiseaseExplanation({ explanation, showClinicalDetails, isPrimaryHealthcare }: { explanation: AssessmentExplanation["predictedDiseases"][number]; showClinicalDetails: boolean; isPrimaryHealthcare: boolean }) {
+  const displayedFeatures = explanation.features;
   const maximumContribution = Math.max(...displayedFeatures.map((item) => Math.abs(item.contribution)), 1);
   return (
     <View style={tw`rounded-3xl border border-slate-200 bg-white p-5 shadow-sm`}>
       <View style={tw`flex-row items-center justify-between`}>
         <Text style={tw`flex-1 text-base font-bold text-slate-900`}>{explanation.disease}</Text>
         <View style={tw`rounded-full bg-teal-50 px-3 py-1`}>
+          {isPrimaryHealthcare ? <Text style={tw`text-[9px] font-semibold text-teal-700`}>Model confidence</Text> : null}
           <Text style={tw`text-xs font-bold text-teal-700`}>{Math.round(explanation.confidence * 100)}%</Text>
         </View>
       </View>
-        {showClinicalDetails ? (
+      {showClinicalDetails ? (
         <>
-        <Text style={tw`mt-1 text-xs leading-4 text-slate-500`}></Text>
         <View style={tw`mt-4 rounded-2xl bg-teal-50 p-3`}>
           <Text style={tw`text-[10px] font-bold uppercase tracking-widest text-teal-700`}>Recommendation</Text>
           <Text style={tw`mt-1 text-sm leading-5 text-slate-700`}>{explanation.recommendation ?? ""}</Text>
-      </View>
-      <Text style={tw`mt-4 text-xs leading-4 text-slate-500`}>why this disease.</Text>
+        </View>
+        </>
+      ) : null}
+      {displayedFeatures.length > 0 ? (
+        <>
+      <Text style={tw`mt-4 text-xs font-bold leading-4 text-slate-600`}>{isPrimaryHealthcare ? "Why the model suggested this" : "Model factors"}</Text>
       <View style={tw`mt-4 gap-3`}>
         {displayedFeatures.map((item) => (
           <View key={`${item.feature}-${item.contribution}`}>
             <View style={tw`flex-row items-center justify-between`}>
               <Text style={tw`flex-1 text-sm font-semibold capitalize text-slate-700`}>{item.feature.replaceAll("_", " ")}</Text>
-              <Text style={tw`text-xs font-bold ${item.direction === "supports" ? "text-emerald-700" : "text-rose-700"}`}>{item.direction === "supports" ? "Supports" : "Opposes"}</Text>
+              <Text style={tw`text-xs font-bold ${item.direction === "supports" ? "text-emerald-700" : "text-rose-700"}`}>
+                {isPrimaryHealthcare
+                  ? item.direction === "supports" ? "Pushed toward match" : "Pushed away from match"
+                  : item.direction === "supports" ? "Supports" : "Opposes"}
+              </Text>
             </View>
             <View style={tw`mt-1 h-2 overflow-hidden rounded-full bg-slate-100`}>
               <View style={[tw`h-full rounded-full ${item.direction === "supports" ? "bg-emerald-500" : "bg-rose-400"}`, { width: `${Math.max(8, Math.round((Math.abs(item.contribution) / maximumContribution) * 100))}%` }]} />
@@ -266,6 +286,9 @@ function DiseaseExplanation({ explanation, showClinicalDetails }: { explanation:
           </View>
         ))}
       </View>
+      {isPrimaryHealthcare ? (
+        <Text style={tw`mt-3 text-xs leading-5 text-slate-500`}>These recorded factors influenced the model, but do not confirm a disease. Bar lengths compare factors within this result; they are not measures of risk.</Text>
+      ) : null}
       </>
       ) : null}
     </View>

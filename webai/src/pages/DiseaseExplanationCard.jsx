@@ -1,6 +1,5 @@
-function DiseaseExplanationCard({ disease, showClinicalDetails = true }) {
-  const features = (disease.features || []).filter((feature) =>
-    feature.direction === 'supports' || feature.feature.toLowerCase().includes('temperature'))
+function DiseaseExplanationCard({ disease, showClinicalDetails = true, isPrimaryHealthcare = false }) {
+  const features = disease.features || []
   const maximumContribution = Math.max(
     ...features.map((feature) => Math.abs(feature.contribution)),
     1,
@@ -10,7 +9,9 @@ function DiseaseExplanationCard({ disease, showClinicalDetails = true }) {
     <article className="disease-explanation-card">
       <header className="disease-explanation-heading">
         <h3>{disease.disease}</h3>
-        <span className="disease-confidence">{Math.round((disease.confidence || 0) * 100)}%</span>
+        <span className="disease-confidence">
+          {isPrimaryHealthcare ? 'Model confidence ' : ''}{Math.round((disease.confidence || 0) * 100)}%
+        </span>
       </header>
 
       {showClinicalDetails && disease.recommendation && (
@@ -20,8 +21,9 @@ function DiseaseExplanationCard({ disease, showClinicalDetails = true }) {
         </div>
       )}
 
-      {showClinicalDetails && <p className="disease-why">Why this disease.</p>}
-      {showClinicalDetails && features.length > 0 && (
+      {features.length > 0 && (
+        <>
+        <p className="disease-why">{isPrimaryHealthcare ? 'Why the model suggested this' : 'Model factors'}</p>
         <ul className="disease-feature-list">
           {features.map((feature) => {
             const impact = Math.max(
@@ -36,7 +38,9 @@ function DiseaseExplanationCard({ disease, showClinicalDetails = true }) {
                 <div className="disease-feature-heading">
                   <strong>{label}</strong>
                   <span className={`feature-direction ${direction}`}>
-                    {direction === 'supports' ? 'Supports' : 'Opposes'}
+                    {isPrimaryHealthcare
+                      ? direction === 'supports' ? 'Pushed toward match' : 'Pushed away from match'
+                      : direction === 'supports' ? 'Supports' : 'Opposes'}
                   </span>
                 </div>
                 <div
@@ -53,6 +57,12 @@ function DiseaseExplanationCard({ disease, showClinicalDetails = true }) {
             )
           })}
         </ul>
+        {isPrimaryHealthcare && (
+          <p className="disease-explanation-note">
+            These recorded factors influenced the model, but do not confirm a disease. Bar lengths compare factors within this result; they are not measures of risk.
+          </p>
+        )}
+        </>
       )}
     </article>
   )

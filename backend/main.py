@@ -352,8 +352,23 @@ def resolve_symptoms(value: str) -> list[str]:
             resolved.append(best_match)
 
     # Also recognize known symptoms inside natural sentences, not only CSV-style lists.
-    for known_symptom in all_symptoms:
-        if known_symptom in normalized_value and known_symptom not in resolved:
+    mentions = sorted(
+        (
+            (match.start(), match.end(), known_symptom)
+            for known_symptom in all_symptoms
+            for match in re.finditer(
+                rf"(?<![a-z0-9]){re.escape(known_symptom)}(?![a-z0-9])",
+                normalized_value,
+            )
+        ),
+        key=lambda mention: (mention[0], -(mention[1] - mention[0]), mention[2]),
+    )
+    accepted_spans: list[tuple[int, int]] = []
+    for start, end, known_symptom in mentions:
+        if any(start < accepted_end and end > accepted_start for accepted_start, accepted_end in accepted_spans):
+            continue
+        accepted_spans.append((start, end))
+        if known_symptom not in resolved:
             resolved.append(known_symptom)
 
     return list(dict.fromkeys(resolved))

@@ -65,7 +65,7 @@ function AssessmentResult({ result, explanation, explanationPending, explanation
       {!isPrimaryHealthcare && explanationError && <p className="form-error" role="status">Assessment saved. Explanation unavailable: {explanationError}</p>}
       <section className="disease-explanations" aria-label="Model disease explanations">
         {explainedDiseases.length ? (
-            explainedDiseases.map((disease) => <DiseaseExplanationCard disease={disease} showClinicalDetails={!isPrimaryHealthcare} key={disease.disease} />)
+            explainedDiseases.map((disease) => <DiseaseExplanationCard disease={disease} showClinicalDetails={!isPrimaryHealthcare} isPrimaryHealthcare={isPrimaryHealthcare} key={disease.disease} />)
         ) : (
           <DiseaseExplanationCard disease={{
           disease: hasSymptomSupportedPrediction ? result.disease : 'Insufficient evidence',
@@ -76,7 +76,7 @@ function AssessmentResult({ result, explanation, explanationPending, explanation
                   ? result.recommendation || 'The reported symptoms do not provide enough evidence for a reliable match. Record more specific symptoms and review the case with a qualified healthcare professional.'
                   : '',
               features: hasSymptomSupportedPrediction ? explanation?.features || [] : [],
-            }} showClinicalDetails={!isPrimaryHealthcare} />
+            }} showClinicalDetails={!isPrimaryHealthcare} isPrimaryHealthcare={isPrimaryHealthcare} />
         )}
         </section>
     </section>

@@ -1,13 +1,16 @@
 {
   "files": {
-    "main.css": "/static/css/main.122d3bcb.css",
-    "main.js": "/static/js/main.f08c972a.js",
+    "main.css": "/static/css/main.055c2580.css",
+    "main.js": "/static/js/main.5b39c620.js",
+    "static/media/primary-health-worker.png": "/static/media/primary-health-worker.6ac03c3af78d81f92104.png",
+    "static/media/nursing-staff.png": "/static/media/nursing-staff.a256a9b7fa66ab078830.png",
+    "static/media/doctor.jpg": "/static/media/doctor.21b261fd094155ca21c7.jpg",
     "index.html": "/index.html",
-    "main.122d3bcb.css.map": "/static/css/main.122d3bcb.css.map",
-    "main.f08c972a.js.map": "/static/js/main.f08c972a.js.map"
+    "main.055c2580.css.map": "/static/css/main.055c2580.css.map",
+    "main.5b39c620.js.map": "/static/js/main.5b39c620.js.map"
   },
   "entrypoints": [
-    "static/css/main.122d3bcb.css",
-    "static/js/main.f08c972a.js"
+    "static/css/main.055c2580.css",
+    "static/js/main.5b39c620.js"
   ]
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { FiActivity, FiArrowRight, FiChevronRight, FiUsers, FiSettings } from 'react-icons/fi'
+import { FiActivity, FiArrowRight, FiChevronRight, FiShield } from 'react-icons/fi'
 import AuthLayout from '../components/AuthLayout'
+import PortalIllustration from '../components/PortalIllustration'
 import { login } from '../api'
 
 const portals = [
@@ -9,21 +10,18 @@ const portals = [
     title: 'Primary Healthcare',
     description: 'Access patient assessments and supported results.',
     button: 'Enter Primary Healthcare Portal',
-    icon: FiActivity,
   },
   {
     role: 'nurse',
     title: 'Nursing Staff',
     description: 'Manage patient care, assessments, and records.',
     button: 'Enter Nursing Portal',
-    icon: FiUsers,
   },
   {
     role: 'admin',
     title: 'Administrator',
     description: 'Manage staff accounts and system activity.',
     button: 'Enter Admin Portal',
-    icon: FiSettings,
   },
 ]
 
@@ -63,27 +61,42 @@ function Login({ onLogin, onNavigate, message }) {
     >
       {!hasExplored ? (
         <div className="explore-landing">
-          <h1 className="explore-title">
-            <span>Welcome to AI Health</span>
-            <span>Decision Support System</span>
-          </h1>
+          <div className="explore-brand">
+            <span className="explore-brand-mark"><FiActivity aria-hidden="true" /></span>
+            <span>CLINICAL WORKSPACE</span>
+          </div>
+          <div className="explore-content">
+            <p className="explore-kicker">SMARTER SUPPORT. HUMAN JUDGMENT.</p>
+            <h1 className="explore-title">
+              <span className="explore-title-line">
+                <span className="explore-word" style={{ animationDelay: '120ms' }}>AI-assisted</span>
+              </span>
+              <span className="explore-title-line">
+                <span className="explore-word" style={{ animationDelay: '260ms' }}>clinical</span>{' '}
+                <span className="explore-word" style={{ animationDelay: '400ms' }}>care.</span>
+              </span>
+            </h1>
+            <p className="explore-subtitle">Decision support for healthcare teams, always guided by clinicians.</p>
+          </div>
           <button className="explore-button" type="button" onClick={() => setHasExplored(true)}>
-            Explore portals
+            <span>Continue to sign in</span>
             <FiArrowRight aria-hidden="true" />
           </button>
         </div>
       ) : !selectedPortal ? (
         <div className="portal-selection">
+          <div className="portal-brand">
+            <span className="portal-brand-icon"><FiActivity aria-hidden="true" /></span>
+            <span className="portal-eyebrow">CLINICAL WORKSPACE</span>
+          </div>
           <div className="portal-heading">
-            <h2>Select a portal</h2>
-            <p>Select the role associated with your login.</p>
+            <h2>Choose your workspace</h2>
+            <p>Select the role linked to your account to continue securely.</p>
           </div>
           {message && <p className="form-error" role="alert">{message}</p>}
           {error && <p className="form-error" role="alert">{error}</p>}
           <div className="portal-list">
-            {portals.map((portal) => {
-              const Icon = portal.icon
-              return (
+            {portals.map((portal) => (
                 <button
                   className="portal-card"
                   key={portal.role}
@@ -92,7 +105,7 @@ function Login({ onLogin, onNavigate, message }) {
                   onClick={() => { setSelectedPortal(portal.role); setError('') }}
                 >
                   <span className="portal-card-content">
-                    <span className="portal-card-icon"><Icon aria-hidden="true" /></span>
+                    <span className="portal-card-art"><PortalIllustration role={portal.role} /></span>
                     <span className="portal-card-copy">
                       <strong>{portal.title}</strong>
                       <span>{portal.description}</span>
@@ -100,17 +113,17 @@ function Login({ onLogin, onNavigate, message }) {
                     <FiChevronRight className="portal-card-chevron" aria-hidden="true" />
                   </span>
                   <span className="portal-card-action">
-                    {portal.button}
+                    Continue as {portal.title}
                     <FiArrowRight aria-hidden="true" />
                   </span>
                 </button>
-              )
-            })}
+            ))}
           </div>
           <button className="portal-back explore-back" type="button" onClick={() => { setHasExplored(false); setError('') }}>
             <FiChevronRight aria-hidden="true" />
             Back to explore
           </button>
+          <p className="portal-secure"><FiShield aria-hidden="true" /> Secure access for authorized clinical staff</p>
         </div>
       ) : (
       <>

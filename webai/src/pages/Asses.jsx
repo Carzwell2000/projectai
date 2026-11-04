@@ -78,13 +78,17 @@ function Asses({ patients, onSubmit, onComplete }) {
 	return (
 		<div className="page-stack form-page">
 			<section className="page-heading">
-				<div><p className="eyebrow"></p><h1>New assessment</h1><p className="muted"></p></div>
+				<div><p className="eyebrow">CLINICAL DECISION SUPPORT</p><h1>New assessment</h1><p className="muted">Record what the patient reports and their vital signs to get a decision-support summary.</p></div>
 				<div className="assessment-badge"><FiActivity aria-hidden="true" /></div>
 			</section>
+			<div className="decision-support-note" role="note">
+				<FiInfo aria-hidden="true" />
+				<p><strong>What this assessment does</strong><span>It compares reported symptoms with patterns in its disease model and checks vital signs for triage warning signs. It suggests possibilities for a healthcare professional to review; it does not diagnose or choose treatment.</span></p>
+			</div>
 			{patients.length ? (
 				<>
 					<section className="form-panel assessment-panel">
-						<div className="form-panel-title"><span className="quick-icon"><FiActivity aria-hidden="true" /></span><div><h2>Assess Patient</h2><p></p></div></div>
+						<div className="form-panel-title"><span className="quick-icon"><FiActivity aria-hidden="true" /></span><div><h2>Patient information</h2><p>Complete each field using the patient’s report and current measurements.</p></div></div>
 						<form className="data-form" onSubmit={handleSubmit}>
 							<div className="form-grid">
 								<label className="field field-wide">Patient <span>*</span><select name="patientId" required value={selectedPatientId} onChange={(event) => {

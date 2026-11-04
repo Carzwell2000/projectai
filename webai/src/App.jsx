@@ -417,6 +417,7 @@ function App() {
         onNavigate={setView}
         onRefresh={refreshWorkspace}
         nurseId={session?.nurse?.id}
+        isPrimaryHealthcare={session?.nurse?.role === 'primary_healthcare'}
       />
     )
   }

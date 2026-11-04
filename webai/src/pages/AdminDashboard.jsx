@@ -12,9 +12,13 @@ function AdminDashboard({ analytics, loading, onNavigate }) {
   const diseaseData = topDiseases.map((item) => ({ x: item.label, y: item.value || 0 }))
 
   return (
-    <div className="page-stack">
+    <div className="page-stack motion-dashboard">
       <section className="page-heading">
-        <div><h1>ADMINISTRATOR DASHBOARD</h1></div>
+        <div>
+          <p className="eyebrow">CLINIC ADMINISTRATION</p>
+          <h1>Clinic overview</h1>
+          <p className="muted">Monitor clinic activity, staff accounts, and records awaiting sync.</p>
+        </div>
         <button className="button button-secondary" type="button" onClick={() => onNavigate('nurses')}><FiUsers aria-hidden="true" /> Manage nurse accounts</button>
       </section>
 

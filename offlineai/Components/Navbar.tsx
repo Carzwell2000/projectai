@@ -44,10 +44,10 @@ export default function Navbar({ variant = "default", monitorSync = true, showSy
 	return (
 		<>
 			{variant === "hero" ? (
-				<View style={tw`bg-sky-500 px-5 pb-8 pt-2`}>
+				<View style={tw`bg-[#102D2B] px-5 pb-8 pt-2`}>
 					{showSyncStatus ? (
-						<View style={tw`mb-6 flex-row items-center rounded-2xl bg-yellow-300 px-4 py-3`}>
-							<View style={tw`h-7 w-7 items-center justify-center rounded-full bg-sky-100`}>
+						<View style={tw`mb-6 flex-row items-center rounded-2xl bg-[#EAF5EF] px-4 py-3`}>
+							<View style={tw`h-7 w-7 items-center justify-center rounded-full bg-white`}>
 								<Ionicons name={isConnected ? "cloud-done-outline" : "cloud-offline-outline"} size={17} color="#1671B8" />
 							</View>
 							<View style={tw`ml-3 flex-1`}>
@@ -78,7 +78,7 @@ export default function Navbar({ variant = "default", monitorSync = true, showSy
 							accessibilityLabel="Open menu"
 							accessibilityRole="button"
 							onPress={() => setIsMenuOpen(true)}
-							style={({ pressed }) => [tw`h-12 w-12 items-center justify-center rounded-2xl bg-sky-400`, pressed && tw`opacity-70`]}
+							style={({ pressed }) => [tw`h-12 w-12 items-center justify-center rounded-2xl bg-white/10`, pressed && tw`opacity-70`]}
 						>
 							<Ionicons name="menu-outline" size={28} color="white" />
 						</Pressable>
