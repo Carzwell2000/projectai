@@ -22,15 +22,15 @@ function AssessmentsByNurseChart({ data, loading }) {
       background="transparent"
       chartArea={{ border: { width: 0 }, background: 'transparent' }}
       primaryXAxis={{ valueType: 'Category', labelStyle: { color: '#71827a', size: '11px', fontFamily: 'Aptos, Segoe UI, sans-serif' }, majorGridLines: { width: 0 }, majorTickLines: { width: 0 }, axisLineStyle: { width: 0 } }}
-      primaryYAxis={{ minimum: 0, interval: getIntegerAxisInterval(chartData), rangePadding: 'Round', labelFormat: 'N0', labelStyle: { color: '#71827a', size: '11px', fontFamily: 'Aptos, Segoe UI, sans-serif' }, majorGridLines: { width: 1, color: '#e8efeb', dashArray: '4,4' }, majorTickLines: { width: 0 }, axisLineStyle: { width: 0 } }}
+      primaryYAxis={{ minimum: 0, interval: getIntegerAxisInterval(chartData), rangePadding: 'None', labelFormat: 'N0', labelStyle: { color: '#71827a', size: '11px', fontFamily: 'Aptos, Segoe UI, sans-serif' }, majorGridLines: { width: 1, color: '#e8efeb', dashArray: '4,4' }, majorTickLines: { width: 0 }, axisLineStyle: { width: 0 } }}
       tooltip={{ enable: true, fill: '#183b34', textStyle: { color: '#ffffff' }, border: { color: '#183b34', width: 1 } }}
       width="100%"
-      height="280"
+      height="205"
       legendSettings={{ visible: false }}
     >
       <Inject services={[ColumnSeries, Tooltip, Category, DataLabel]} />
       <SeriesCollectionDirective>
-        <SeriesDirective dataSource={chartData} xName="x" yName="y" type="Column" name="Assessments" fill="#258c73" />
+        <SeriesDirective dataSource={chartData} xName="x" yName="y" type="Column" name="Assessments" columnWidth={0.65} fill="#258c73" />
       </SeriesCollectionDirective>
     </ChartComponent>
   )

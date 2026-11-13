@@ -23,9 +23,9 @@ The mobile app sends requests to `http://YOUR_COMPUTER_IP:8000` when running on 
 physical device. The API accepts these routes:
 
 - Admins can create staff accounts with the `nurse` or `primary_healthcare`
-  role. Primary-healthcare accounts receive disease predictions only; triage
-  and recommendation fields are omitted from their assessment, history,
-  prediction, and explanation responses.
+  role (Village Health Worker). Village health worker accounts receive disease
+  predictions only; triage and recommendation fields are omitted from their
+  assessment, history, prediction, and explanation responses.
 - `GET /health` returns backend and database status.
 - `POST /api/predict` predicts without saving an assessment (authenticated).
 - `POST /api/explain` returns SHAP feature explanations (authenticated).

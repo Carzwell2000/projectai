@@ -68,12 +68,12 @@ export default function RegisterPatient({ onCancel, onSave, initialPatient }: Re
   };
 
   return (
-    <View style={tw`max-h-[92%] rounded-t-3xl border-t border-slate-200 bg-white px-5 pb-8 pt-6`}>
+    <View style={tw`max-h-[92%] rounded-t-[28px] border-t border-[#DDEBE4] bg-white px-5 pb-8 pt-6`}>
       <View style={tw`mb-5 flex-row items-center justify-between`}>
         <View>
-          <Text style={tw`text-xs font-bold tracking-widest text-teal-700`}></Text>
-          <Text style={tw`mt-1 text-2xl font-bold text-slate-900`}>{initialPatient ? "Edit patient" : "Register patient"}</Text>
-          <Text style={tw`mt-1 text-sm leading-5 text-slate-500`}>{initialPatient ? "" : ""}</Text>
+          <Text style={tw`text-[10px] font-bold tracking-[1.5px] text-teal-700`}>PATIENT DIRECTORY</Text>
+          <Text style={tw`mt-1 text-2xl font-bold text-[#143B4F]`}>{initialPatient ? "Edit patient" : "Register patient"}</Text>
+          <Text style={tw`mt-1 text-sm leading-5 text-slate-500`}>Enter contact and demographic details for this patient.</Text>
         </View>
         <Pressable accessibilityLabel="Close registration form" onPress={onCancel} style={tw`h-10 w-10 items-center justify-center rounded-full bg-slate-100`}>
           <Ionicons name="close-outline" size={24} color="#475569" />
@@ -81,11 +81,11 @@ export default function RegisterPatient({ onCancel, onSave, initialPatient }: Re
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <Text style={tw`mb-3 text-xl font-bold uppercase tracking-widest text-black`}>Personal details</Text>
-        <FormField label="Fullname" placeholder="" value={name} onChangeText={setName} required />
+        <Text style={tw`mb-3 text-[10px] font-bold uppercase tracking-[1.5px] text-slate-500`}>Personal details</Text>
+        <FormField label="Full name" placeholder="Patient full name" value={name} onChangeText={setName} required />
         <FormField
           label="Phone number"
-          placeholder=""
+          placeholder="Phone number"
           value={phone}
           onChangeText={setPhone}
           keyboardType="phone-pad"
@@ -94,11 +94,13 @@ export default function RegisterPatient({ onCancel, onSave, initialPatient }: Re
         <FormField label="Date of birth" placeholder="DD / MM / YYYY" value={dateOfBirth} onChangeText={setDateOfBirth} required />
 
         <View style={tw`mb-4`}>
-          <Text style={tw`mb-2 text-sm font-bold text-slate-700`}>Gender<Text style={tw`text-rose-500`}> </Text></Text>
+          <Text style={tw`mb-2 text-sm font-bold text-slate-700`}>Gender<Text style={tw`text-rose-500`}> *</Text></Text>
           <View style={tw`flex-row flex-wrap gap-2`}>
             {[['female', 'Female'], ['male', 'Male'], ['other', 'Other'],].map(([value, label]) => (
               <Pressable
                 key={value}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: gender === value }}
                 onPress={() => { setGender(value as NewPatient["gender"]); setError(""); }}
                 style={tw`rounded-xl border px-3 py-2 ${gender === value ? "border-teal-700 bg-teal-50" : "border-slate-200 bg-white"}`}
               >
@@ -108,9 +110,9 @@ export default function RegisterPatient({ onCancel, onSave, initialPatient }: Re
           </View>
         </View>
 
-        <Text style={tw`mb-3 mt-2 text-xs font-bold uppercase tracking-widest text-slate-400`}></Text>
-        <FormField label="Email address" placeholder="" value={email} onChangeText={setEmail} keyboardType="email-address" required />
-        <FormField label="Address" placeholder="" value={address} onChangeText={setAddress} multiline required />
+        <Text style={tw`mb-3 mt-2 text-[10px] font-bold uppercase tracking-[1.5px] text-slate-500`}>Contact details</Text>
+        <FormField label="Email address" placeholder="name@example.com" value={email} onChangeText={setEmail} keyboardType="email-address" required />
+        <FormField label="Address" placeholder="Street, city, region" value={address} onChangeText={setAddress} multiline required />
 
         {error ? (
           <View style={tw`mb-4 flex-row items-start rounded-xl border border-rose-200 bg-rose-50 px-3 py-3`}>
@@ -123,7 +125,7 @@ export default function RegisterPatient({ onCancel, onSave, initialPatient }: Re
           accessibilityRole="button"
           onPress={handleSave}
           disabled={isSaving}
-          style={({ pressed }) => [tw`items-center rounded-xl bg-teal-700 py-4`, (pressed || isSaving) && tw`opacity-60`]}
+          style={({ pressed }) => [tw`items-center rounded-2xl bg-[#087C70] py-4`, (pressed || isSaving) && tw`opacity-60`]}
         >
           <Text style={tw`font-bold text-white`}>{isSaving ? "Saving..." : initialPatient ? "Save changes" : "Save patient"}</Text>
         </Pressable>
@@ -151,7 +153,7 @@ function FormField({ label, placeholder, value, onChangeText, keyboardType = "de
     <View style={tw`mb-4`}>
       <View style={tw`mb-2 flex-row items-center justify-between`}>
         <Text style={tw`text-sm font-bold text-slate-700`}>
-          {label}{required ? <Text style={tw`text-rose-500`}> </Text> : null}
+          {label}{required ? <Text style={tw`text-rose-500`}> *</Text> : null}
         </Text>
         {helperText ? <Text style={tw`text-xs text-slate-400`}>{helperText}</Text> : null}
       </View>
@@ -162,7 +164,7 @@ function FormField({ label, placeholder, value, onChangeText, keyboardType = "de
         keyboardType={keyboardType}
         multiline={multiline}
         textAlignVertical={multiline ? "top" : "center"}
-        style={tw`${multiline ? "min-h-[76px]" : ""} rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base text-slate-900`}
+        style={tw`${multiline ? "min-h-[76px]" : ""} rounded-xl border border-[#DCE9E2] bg-[#F7FAF8] px-4 py-3.5 text-sm text-slate-900`}
       />
     </View>
   );

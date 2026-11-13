@@ -1,15 +1,14 @@
 import { useState } from 'react'
 import { FiActivity, FiArrowRight, FiChevronRight, FiShield } from 'react-icons/fi'
 import AuthLayout from '../components/AuthLayout'
-import PortalIllustration from '../components/PortalIllustration'
 import { login } from '../api'
 
 const portals = [
   {
     role: 'primary_healthcare',
-    title: 'Primary Healthcare',
+    title: 'Village Health Worker',
     description: 'Access patient assessments and supported results.',
-    button: 'Enter Primary Healthcare Portal',
+    button: 'Enter Village Health Worker Portal',
   },
   {
     role: 'nurse',
@@ -56,7 +55,8 @@ function Login({ onLogin, onNavigate, message }) {
 
   return (
     <AuthLayout
-      panelClassName={!hasExplored || !selectedPortal ? 'login-panel-portals' : ''}
+      panelClassName={!hasExplored || !selectedPortal ? 'login-panel-portals' : 'login-panel-signin'}
+      layoutClassName={hasExplored && !selectedPortal ? 'login-layout-portals' : selectedPortal ? 'login-layout-signin' : ''}
       immersive={!hasExplored}
     >
       {!hasExplored ? (
@@ -85,35 +85,35 @@ function Login({ onLogin, onNavigate, message }) {
         </div>
       ) : !selectedPortal ? (
         <div className="portal-selection">
-          <div className="portal-brand">
-            <span className="portal-brand-icon"><FiActivity aria-hidden="true" /></span>
-            <span className="portal-eyebrow">CLINICAL WORKSPACE</span>
-          </div>
-          <div className="portal-heading">
-            <h2>Choose your workspace</h2>
-            <p>Select the role linked to your account to continue securely.</p>
+          <div className="portal-header">
+            <div className="portal-brand">
+              <span className="portal-brand-icon"><FiActivity aria-hidden="true" /></span>
+              <span className="portal-eyebrow">HEALTH DECISION SUPPORT</span>
+            </div>
+            <div className="portal-heading">
+              <h2>Choose your workspace</h2>
+              <p>Select the role linked to your account to continue securely.</p>
+            </div>
           </div>
           {message && <p className="form-error" role="alert">{message}</p>}
           {error && <p className="form-error" role="alert">{error}</p>}
           <div className="portal-list">
             {portals.map((portal) => (
                 <button
-                  className="portal-card"
+                  className={`portal-card portal-card-${portal.role}`}
                   key={portal.role}
                   type="button"
                   aria-label={portal.button}
                   onClick={() => { setSelectedPortal(portal.role); setError('') }}
                 >
                   <span className="portal-card-content">
-                    <span className="portal-card-art"><PortalIllustration role={portal.role} /></span>
                     <span className="portal-card-copy">
                       <strong>{portal.title}</strong>
                       <span>{portal.description}</span>
                     </span>
-                    <FiChevronRight className="portal-card-chevron" aria-hidden="true" />
                   </span>
                   <span className="portal-card-action">
-                    Continue as {portal.title}
+                    Enter {portal.title}
                     <FiArrowRight aria-hidden="true" />
                   </span>
                 </button>
@@ -126,25 +126,31 @@ function Login({ onLogin, onNavigate, message }) {
           <p className="portal-secure"><FiShield aria-hidden="true" /> Secure access for authorized clinical staff</p>
         </div>
       ) : (
-      <>
-      <button className="portal-back" type="button" onClick={() => { setSelectedPortal(null); setError('') }}>
-        <FiChevronRight aria-hidden="true" />
-        Choose a different portal
-      </button>
-      <h1>Sign in</h1>
-      <p className="login-copy">Sign in to the {portals.find((portal) => portal.role === selectedPortal)?.title} portal with your account.</p>
-      <form className="login-form" onSubmit={handleSubmit}>
-        <label htmlFor="login-email">Email</label>
-        <input id="login-email" name="email" type="email" autoComplete="username" required />
-        <label htmlFor="login-password">Password</label>
-        <input id="login-password" name="password" type="password" autoComplete="current-password" required />
-        {(error || message) && <p className="form-error" role="alert">{error || message}</p>}
-        <button className="button button-primary login-submit" type="submit" disabled={pending}>
-          {pending ? 'Signing in…' : 'Sign in'}
-        </button>
-      </form>
-      <button className="login-mode-toggle" type="button" onClick={() => onNavigate('forgot-password')}>Forgot password?</button>
-      </>
+        <div className="signin-card">
+          <div className="signin-heading">
+            <h1>Welcome back</h1>
+            <p className="login-copy">
+              Sign in to the {portals.find((portal) => portal.role === selectedPortal)?.title} workspace.
+            </p>
+          </div>
+          <form className="login-form" onSubmit={handleSubmit}>
+            <label htmlFor="login-email">Email address</label>
+            <input id="login-email" name="email" type="email" autoComplete="username" placeholder="you@clinic.org" required />
+            <label htmlFor="login-password">Password</label>
+            <input id="login-password" name="password" type="password" autoComplete="current-password" placeholder="Enter your password" required />
+            {(error || message) && <p className="form-error" role="alert">{error || message}</p>}
+            <button className="button button-primary login-submit" type="submit" disabled={pending}>
+              {pending ? 'Signing in…' : 'Sign in securely'}
+              {!pending && <FiArrowRight aria-hidden="true" />}
+            </button>
+          </form>
+          <button className="login-mode-toggle" type="button" onClick={() => onNavigate('forgot-password')}>Forgot password?</button>
+          <button className="portal-back signin-back" type="button" onClick={() => { setSelectedPortal(null); setError('') }}>
+            <FiChevronRight aria-hidden="true" />
+            Back
+          </button>
+          <p className="signin-secure"><FiShield aria-hidden="true" /> Authorized healthcare staff only</p>
+        </div>
       )}
     </AuthLayout>
   )

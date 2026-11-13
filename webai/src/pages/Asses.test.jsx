@@ -1,21 +1,67 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import React, { useState } from 'react'
+import ReactDOM from 'react-dom'
+import { act, Simulate } from 'react-dom/test-utils'
 import Asses from './Asses'
 
 describe('Asses', () => {
-  it('shows the selected patient age in the assessment form', () => {
+  it('keeps entered assessment values when returning from results', async () => {
     const patients = [{
       id: 'p1',
-      name: 'Alice Johnson',
+      name: 'John Smith',
       dateOfBirth: '1990-05-20',
-      gender: 'Female',
+      gender: 'Male',
     }]
+    const onSubmit = jest.fn().mockResolvedValue({ disease: 'Malaria' })
 
-    render(<Asses patients={patients} onSubmit={jest.fn()} onExplain={jest.fn()} />)
+    function AssessmentHarness() {
+      const [draft, setDraft] = useState({
+        patientId: 'p1',
+        age: '36',
+        gender: 'Male',
+        pregnant: '',
+        temperature: '38.2',
+        bloodPressure: '120/80',
+        symptoms: 'fever and chills',
+      })
+      const [showResults, setShowResults] = useState(false)
 
-    const patientSelect = screen.getByLabelText(/patient/i)
-    fireEvent.change(patientSelect, { target: { value: 'p1' } })
+      return showResults ? (
+        <button type="button" onClick={() => setShowResults(false)}>Back to assessment</button>
+      ) : (
+        <Asses
+          patients={patients}
+          draft={draft}
+          onDraftChange={(updates) => setDraft((current) => ({ ...current, ...updates }))}
+          onSubmit={onSubmit}
+          onComplete={() => setShowResults(true)}
+        />
+      )
+    }
 
-    expect(screen.getByLabelText(/patient age/i)).toBeInTheDocument()
-    expect(screen.getByDisplayValue('35')).toBeInTheDocument()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    act(() => {
+      ReactDOM.render(<AssessmentHarness />, container)
+    })
+
+    await act(async () => {
+      Simulate.submit(container.querySelector('form'))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(container.textContent).toContain('Back to assessment')
+    act(() => Simulate.click(container.querySelector('button')))
+
+    expect(container.querySelector('select[name="patientId"]').value).toBe('p1')
+    expect(container.querySelector('input[name="age"]').value).toBe('36')
+    expect(container.querySelector('input[name="temperature"]').value).toBe('38.2')
+    expect(container.querySelector('input[name="bloodPressure"]').value).toBe('120/80')
+    expect(container.querySelector('textarea[name="symptoms"]').value).toBe('fever and chills')
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      ReactDOM.unmountComponentAtNode(container)
+    })
+    container.remove()
   })
 })

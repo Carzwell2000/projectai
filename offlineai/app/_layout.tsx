@@ -1,6 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { useEffect } from "react";
+import { StatusBar } from "expo-status-bar";
+import * as SystemUI from "expo-system-ui";
 import { getModelCatalog, healthCheck, isApiUnavailable } from "../services/api";
 import { useAuthStore } from "../stores/authStore";
 import Login from "./Login";
@@ -10,6 +12,10 @@ import Admin from "../Components/Admin";
 export default function RootLayout() {
   const session = useAuthStore((state) => state.session);
   const clearSession = useAuthStore((state) => state.clearSession);
+
+  useEffect(() => {
+    void SystemUI.setBackgroundColorAsync("#F3F7F5");
+  }, []);
 
   useEffect(() => {
     if (!session) return;
@@ -26,15 +32,31 @@ export default function RootLayout() {
     return () => clearInterval(interval);
   }, [clearSession, session]);
 
-  if (!session) return <Login />;
-  if (session.nurse.role === "admin") return <Admin />;
+  if (!session) {
+    return (
+      <>
+        <StatusBar style="dark" backgroundColor="#F3F7F5" />
+        <Login />
+      </>
+    );
+  }
+  if (session.nurse.role === "admin") {
+    return (
+      <>
+        <StatusBar style="dark" backgroundColor="#F3F7F5" />
+        <Admin />
+      </>
+    );
+  }
 
   return (
-    <Tabs
-      screenOptions={{
+    <>
+      <StatusBar style="dark" backgroundColor="#F3F7F5" />
+      <Tabs
+        screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#0F766E",
-        tabBarInactiveTintColor: "#94A3B8",
+        tabBarActiveTintColor: "#79F0D2",
+        tabBarInactiveTintColor: "#C2DCD4",
         tabBarItemStyle: {
           flexGrow: 1,
           flexBasis: 0,
@@ -42,18 +64,19 @@ export default function RootLayout() {
           justifyContent: "center",
         },
         tabBarLabelPosition: "below-icon",
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
+        tabBarLabelStyle: { fontSize: 10, fontWeight: "700" },
         tabBarStyle: {
-          height: 72,
-          paddingHorizontal: 0,
+          height: 74,
+          paddingHorizontal: 4,
           paddingTop: 8,
           paddingBottom: 10,
-          borderTopColor: "#E2E8F0",
+          borderTopColor: "#0C685B",
           borderTopWidth: 1,
-          backgroundColor: "#FFFFFF",
+          backgroundColor: "#075348",
+          elevation: 16,
         },
-      }}
-    >
+        }}
+      >
       <Tabs.Screen
         name="Login"
         options={{ tabBarButton: () => null, tabBarItemStyle: { display: "none" } }}
@@ -144,6 +167,7 @@ export default function RootLayout() {
           tabBarItemStyle: { display: "none" },
         }}
       />
-    </Tabs>
+      </Tabs>
+    </>
   );
 }

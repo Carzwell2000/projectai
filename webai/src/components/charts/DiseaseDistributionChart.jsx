@@ -12,7 +12,7 @@ import { getIntegerAxisInterval, normalizeCountData } from './chartScale'
 
 function DiseaseDistributionChart({ data, loading }) {
   if (!data.length) {
-    return <div className="admin-chart-empty">{loading ? 'Loading results…' : 'No model results recorded yet.'}</div>
+    return <div className="admin-chart-empty">{loading ? 'Loading results…' : 'No results recorded yet.'}</div>
   }
   const chartData = normalizeCountData(data)
 

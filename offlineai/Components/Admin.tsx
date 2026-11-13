@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useEffect,useState, type ReactNode,} from "react";
+import { LinearGradient } from "expo-linear-gradient";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {Alert,KeyboardAvoidingView,
   Modal,
   Platform,
@@ -8,23 +9,27 @@ import {Alert,KeyboardAvoidingView,
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 
 import { SafeAreaView } from "react-native-safe-area-context";
 import tw from "twrnc";
 
-import Area from "./Charts/Area";
-import Pie from "./Charts/Pie";
-import RankedBars from "./Charts/RankedBars";
+import Area from "../Components/Charts/Area";
+import Pie from "../Components/Charts/Pie";
+import RankedBars from "../Components/Charts/RankedBars";
 
 import {
   changePassword,
   createNurse,
   deleteNurse,
+  downloadAdminAssessmentWorkbook,
   getAdminAnalytics,
   getApiErrorMessage,
+  listAdminAssessments,
   listNurses,
   type AdminAnalytics,
+  type LocalAssessment,
   type RegisteredNurse,
   type StaffRole,
 } from "../services/api";
@@ -36,9 +41,10 @@ type AdminPage =
   | "overview"
   | "create"
   | "registered"
-  | "password";
+  | "password"
+  | "assessments";
 
-const BLUE = "#0EA5E9";
+const BLUE = "#087C70";
 
 export default function Admin() {
   /*
@@ -48,6 +54,7 @@ export default function Admin() {
   */
 
   const logout = useAuthStore((state) => state.logout);
+  const { width: windowWidth } = useWindowDimensions();
 
   /*
   ============================================================
@@ -122,6 +129,60 @@ export default function Admin() {
   const [analyticsError, setAnalyticsError] =
     useState("");
 
+  const [clinicAssessments, setClinicAssessments] =
+    useState<LocalAssessment[]>([]);
+
+  const [assessmentStaffRole, setAssessmentStaffRole] =
+    useState<StaffRole | null>(null);
+
+  const [assessmentQuery, setAssessmentQuery] =
+    useState("");
+
+  const [isLoadingAssessments, setIsLoadingAssessments] =
+    useState(false);
+
+  const [assessmentError, setAssessmentError] =
+    useState("");
+
+  const [assessmentExportError, setAssessmentExportError] =
+    useState("");
+
+  const [isExportingAssessments, setIsExportingAssessments] =
+    useState(false);
+
+  const visibleAssessments = clinicAssessments.filter((assessment) =>
+    `${assessment.patient_name} ${assessment.disease || ""} ${assessment.symptoms} ${assessment.nurse_name}`
+      .toLowerCase()
+      .includes(assessmentQuery.trim().toLowerCase()),
+  );
+  const primaryHealthcareAssessments = visibleAssessments.filter(
+    (assessment) => assessment.staff_role === "primary_healthcare",
+  );
+  const nurseAssessments = visibleAssessments.filter(
+    (assessment) => assessment.staff_role !== "primary_healthcare",
+  );
+  const selectedAssessments = assessmentStaffRole === "primary_healthcare"
+    ? primaryHealthcareAssessments
+    : nurseAssessments;
+  const selectedGroupCount = clinicAssessments.filter((assessment) =>
+    assessmentStaffRole === "primary_healthcare"
+      ? assessment.staff_role === "primary_healthcare"
+      : assessment.staff_role !== "primary_healthcare",
+  ).length;
+
+  const exportClinicAssessments = async () => {
+    if (!assessmentStaffRole) return;
+    setAssessmentExportError("");
+    setIsExportingAssessments(true);
+    try {
+      await downloadAdminAssessmentWorkbook(assessmentStaffRole);
+    } catch (error) {
+      setAssessmentExportError(getApiErrorMessage(error));
+    } finally {
+      setIsExportingAssessments(false);
+    }
+  };
+
   /*
   ============================================================
   LOAD NURSES
@@ -183,6 +244,28 @@ export default function Admin() {
     loadAnalytics,
   ]);
 
+  useEffect(() => {
+    if (activePage !== "assessments") return undefined;
+    let active = true;
+    setIsLoadingAssessments(true);
+    setAssessmentError("");
+
+    listAdminAssessments()
+      .then((assessments) => {
+        if (active) setClinicAssessments(assessments);
+      })
+      .catch((error: unknown) => {
+        if (active) setAssessmentError(getApiErrorMessage(error));
+      })
+      .finally(() => {
+        if (active) setIsLoadingAssessments(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [activePage]);
+
   /*
   ============================================================
   SYNC MONITORING
@@ -234,7 +317,7 @@ export default function Admin() {
       setAccountRole("nurse");
 
       setMessage(
-        `${accountRole === "nurse" ? "Nurse" : "Primary healthcare"} account created successfully.`
+        `${accountRole === "nurse" ? "Nurse" : "Village health worker"} account created successfully.`
       );
 
       await useSyncStore
@@ -303,12 +386,14 @@ export default function Admin() {
 
   const pageTitle =
     activePage === "overview"
-      ? "Dashboard"
+      ? "Clinic overview"
       : activePage === "create"
         ? "Create Staff Account"
         : activePage === "registered"
           ? "Staff Directory"
-          : "Change Password";
+            : activePage === "assessments"
+              ? "Patient assessment records"
+              : "Change Password";
 
   /*
   ============================================================
@@ -337,6 +422,11 @@ export default function Admin() {
       icon: "people-outline",
     },
     {
+      page: "assessments",
+      label: "Patient assessment records",
+      icon: "clipboard-outline",
+    },
+    {
       page: "password",
       label: "Change Password",
       icon: "lock-closed-outline",
@@ -351,7 +441,7 @@ export default function Admin() {
 
   return (
     <SafeAreaView
-      style={tw`flex-1 bg-[#F4F7F7]`}
+      style={tw`flex-1 bg-[#F3F7F5]`}
     >
       <KeyboardAvoidingView
         style={tw`flex-1`}
@@ -372,20 +462,27 @@ export default function Admin() {
               ONLY ADMINISTRATION DASHBOARD + MENU
           ================================================== */}
 
-          <View
-            style={tw`bg-sky-500 px-5 pb-7 pt-5`}
+          <LinearGradient
+            colors={["#075B51", "#06463F", "#063C39"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={tw`rounded-b-[26px] px-5 pb-6 pt-3`}
           >
             <View
-              style={tw`flex-row items-center justify-between`}
+              style={tw`mb-5 flex-row items-center justify-between`}
             >
 
               {/* TITLE */}
 
-              <Text
-                style={tw`flex-1 text-2xl font-bold text-white`}
-              >
-                Administration Dashboard
-              </Text>
+              <View style={tw`flex-row items-center`}>
+                <View style={tw`h-10 w-10 items-center justify-center rounded-2xl border border-white/25 bg-white/10`}>
+                  <Ionicons name="pulse" size={23} color="#A8F5DF" />
+                </View>
+                <View style={tw`ml-3`}>
+                  <Text style={tw`text-base font-extrabold tracking-wide text-white`}>Clinic AI</Text>
+                  <Text style={tw`mt-0.5 text-[10px] font-medium text-emerald-100`}>Administration</Text>
+                </View>
+              </View>
 
               {/* MENU */}
 
@@ -396,7 +493,7 @@ export default function Admin() {
                   setIsMenuOpen(true)
                 }
                 style={({ pressed }) => [
-                  tw`ml-3 h-11 w-11 items-center justify-center rounded-xl bg-white/15`,
+                  tw`ml-3 h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-white/10`,
                   pressed &&
                     tw`opacity-70`,
                 ]}
@@ -409,7 +506,18 @@ export default function Admin() {
               </Pressable>
 
             </View>
-          </View>
+
+            <View style={tw`mt-1 flex-row items-end justify-between`}>
+                <View>
+                  <Text style={tw`text-[10px] font-bold tracking-[1.7px] text-emerald-200`}>CLINICAL WORKSPACE</Text>
+                  <Text style={tw`mt-1 text-2xl font-bold text-white`}>{pageTitle}</Text>
+                  <Text style={tw`mt-1 text-xs text-emerald-50`}>Monitor staff, patients, and clinical activity.</Text>
+                </View>
+                <View style={tw`mb-1 h-10 w-10 items-center justify-center rounded-full border-2 border-emerald-100/70 bg-white/10`}>
+                  <Ionicons name="shield-checkmark-outline" size={19} color="white" />
+                </View>
+              </View>
+            </LinearGradient>
 
           {/* ==================================================
               DASHBOARD / OVERVIEW
@@ -417,6 +525,26 @@ export default function Admin() {
 
           {activePage === "overview" ? (
             <View style={tw`px-4 pt-5`}>
+              <View style={tw`mb-4 flex-row items-center justify-between`}>
+                <View style={tw`mr-3 flex-1`}>
+                  <Text style={tw`text-[10px] font-bold tracking-[1.5px] text-teal-700`}>CLINIC ADMINISTRATION</Text>
+                  <Text style={tw`mt-1 text-xl font-bold text-[#143B4F]`}>Clinic overview</Text>
+                  <Text style={tw`mt-1 text-xs leading-5 text-slate-600`}>
+                    Monitor patient records, staff activity, and clinic-wide assessment trends.
+                  </Text>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setActivePage("registered")}
+                  style={({ pressed }) => [
+                    tw`flex-row items-center rounded-xl bg-[#087C70] px-3 py-2.5`,
+                    pressed && tw`opacity-80`,
+                  ]}
+                >
+                  <Ionicons name="people-outline" size={16} color="white" />
+                  <Text style={tw`ml-1.5 text-[10px] font-bold text-white`}>Manage staff</Text>
+                </Pressable>
+              </View>
 
               {/* ERROR */}
 
@@ -436,101 +564,130 @@ export default function Admin() {
                 <>
                   {/* METRICS */}
 
-                  <View
-                    style={tw`mt-4 flex-row gap-3`}
-                  >
+                  <View style={tw`flex-row flex-wrap justify-between`}>
                     <AdminMetric
-                      icon="pulse-outline"
-                      label="Assessments"
-                      value={
-                        analytics.totals
-                          .assessments
-                      }
-                    />
-
-                    <AdminMetric
+                      width={windowWidth >= 1050 ? "23.8%" : "48.5%"}
+                      tone="green"
                       icon="people-outline"
-                      label="Patients"
-                      value={
-                        analytics.totals
-                          .patients
-                      }
+                      label="Registered patients"
+                      value={analytics.totals.patients}
+                      detail="Clinic-wide patient records"
                     />
-                  </View>
-
-                  <View
-                    style={tw`mt-3 flex-row gap-3`}
-                  >
                     <AdminMetric
-                      icon="medkit-outline"
-                      label="Nurses"
-                      value={
-                        analytics.totals
-                          .nurses
-                      }
+                      width={windowWidth >= 1050 ? "23.8%" : "48.5%"}
+                      tone="blue"
+                      icon="clipboard-outline"
+                      label="Saved assessments"
+                      value={analytics.totals.assessments}
+                      detail="Clinical reviews recorded"
                     />
-
                     <AdminMetric
+                      width={windowWidth >= 1050 ? "23.8%" : "48.5%"}
+                      tone="purple"
+                      icon="shield-checkmark-outline"
+                      label="Nurse accounts"
+                      value={analytics.totals.nurses}
+                      detail="Manage staff"
+                      onAction={() => setActivePage("registered")}
+                    />
+                    <AdminMetric
+                      width={windowWidth >= 1050 ? "23.8%" : "48.5%"}
+                      tone="orange"
                       icon="cloud-upload-outline"
-                      label="Pending Sync"
-                      value={
-                        analytics.totals
-                          .pendingSync
-                      }
-                      detail={`${analytics.totals.conflicts} conflicts`}
+                      label="Needs attention"
+                      value={analytics.totals.pendingSync + analytics.totals.conflicts}
+                      detail={`${analytics.totals.pendingSync} awaiting sync · ${analytics.totals.conflicts} conflicts`}
                     />
                   </View>
 
-                  {/* DAILY ASSESSMENTS */}
+                  <View style={tw`mt-4 flex-row flex-wrap justify-between`}>
+                    <DashboardCard
+                      width={windowWidth >= 900 ? "48.8%" : "100%"}
+                      icon="analytics-outline"
+                      title="Assessment activity"
+                      subtitle="Assessments added during the past seven days"
+                      meta="Last 7 days"
+                    >
+                      <Area
+                        series={[{
+                          label: "Assessments",
+                          color: "#167663",
+                          fillColor: "#9AE6D3",
+                          data: analytics.dailyAssessments,
+                        }]}
+                      />
+                    </DashboardCard>
 
-                  <DashboardCard
-                    icon="analytics-outline"
-                    title="Daily activity"
-                    subtitle="Assessments added during the past seven days"
+                    <DashboardCard
+                      width={windowWidth >= 900 ? "48.8%" : "100%"}
+                      icon="pulse-outline"
+                      title="Common results"
+                      subtitle="Distribution across saved assessments"
+                      meta="Saved assessments"
+                    >
+                      <Pie
+                        data={analytics.topDiseases}
+                        emptyMessage={isLoadingAnalytics ? "Loading results…" : "No results recorded yet."}
+                      />
+                      <View style={tw`mt-2 flex-row items-start rounded-xl bg-amber-50 px-3 py-2`}>
+                        <Ionicons name="alert-circle-outline" size={15} color="#B45309" />
+                        <Text style={tw`ml-2 flex-1 text-[10px] leading-4 text-amber-800`}>
+                          Results are informational, not diagnoses.
+                        </Text>
+                      </View>
+                    </DashboardCard>
+                  </View>
+
+                  <View style={tw`mt-3 flex-row flex-wrap justify-between`}>
+                    <DashboardCard
+                      width={windowWidth >= 900 ? "48.8%" : "100%"}
+                      icon="pie-chart-outline"
+                      title="Assessment usage by role"
+                      subtitle="Share of all saved assessments"
+                      meta="All saved assessments"
+                    >
+                      <Pie
+                        data={analytics.assessmentUsageByRole}
+                        colors={["#11B98C", "#8255D5"]}
+                        showPercentages
+                        emptyMessage={isLoadingAnalytics ? "Loading staff usage…" : "No staff assessments recorded yet."}
+                      />
+                    </DashboardCard>
+
+                    <DashboardCard
+                      width={windowWidth >= 900 ? "48.8%" : "100%"}
+                      icon="people-outline"
+                      title="Assessments by staff member"
+                      subtitle="Top staff members by assessment count"
+                      meta="Clinic-wide totals"
+                    >
+                      <RankedBars data={analytics.assessmentsByNurse} />
+                    </DashboardCard>
+                  </View>
+
+                  <LinearGradient
+                    colors={["#E7FBF5", "#CCF4E9", "#B5ECDF"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={tw`mt-4 flex-row items-center rounded-2xl border border-[#B6EBE0] px-4 py-4`}
                   >
-                    <Area
-                      series={[
-                        {
-                          label:
-                            "Assessments",
-                          color:
-                            "#0EA5E9",
-                          fillColor:
-                            "#7DD3FC",
-                          data:
-                            analytics.dailyAssessments,
-                        },
-                      ]}
-                    />
-                  </DashboardCard>
-
-                  {/* NURSE ASSESSMENTS */}
-
-                  <DashboardCard
-                    icon="people-outline"
-                    title="Assessments by nurse"
-                    subtitle="Top ten nurses by total assessments"
-                  >
-                    <RankedBars
-                      data={
-                        analytics.assessmentsByNurse
-                      }
-                    />
-                  </DashboardCard>
-
-                  {/* DISEASES */}
-
-                  <DashboardCard
-                    icon="pulse-outline"
-                    title="Most predicted diseases"
-                    subtitle="Distribution of predicted conditions"
-                  >
-                    <Pie
-                      data={
-                        analytics.topDiseases
-                      }
-                    />
-                  </DashboardCard>
+                    <View style={tw`h-11 w-11 items-center justify-center rounded-2xl bg-white/70`}>
+                      <Ionicons name="hardware-chip-outline" size={23} color="#087C70" />
+                    </View>
+                    <View style={tw`ml-3 flex-1`}>
+                      <Text style={tw`text-sm font-bold text-[#07575B]`}>Clinic insights</Text>
+                      <Text style={tw`mt-1 text-xs font-bold text-[#143B4F]`}>
+                        {analytics.topDiseases[0]
+                          ? `Most common result: ${analytics.topDiseases[0].label}`
+                          : "No results recorded yet"}
+                      </Text>
+                      <Text style={tw`mt-1 text-[10px] leading-4 text-slate-600`}>
+                        {analytics.topDiseases[0]
+                          ? `${analytics.topDiseases[0].value} saved ${analytics.topDiseases[0].value === 1 ? "assessment" : "assessments"} with this result. Review each case clinically.`
+                          : "Results are decision support and are not diagnoses."}
+                      </Text>
+                    </View>
+                  </LinearGradient>
                 </>
               ) : null}
             </View>
@@ -550,7 +707,7 @@ export default function Admin() {
                 {/* HEADER */}
 
                 <View
-                  style={tw`bg-[#F0F9FF] px-5 py-5`}
+                  style={tw`bg-[#EAF8F2] px-5 py-5`}
                 >
                   <View
                     style={tw`h-12 w-12 items-center justify-center rounded-2xl bg-white`}
@@ -566,6 +723,9 @@ export default function Admin() {
                     style={tw`mt-4 text-xl font-bold text-slate-900`}
                   >
                     Create a healthcare staff account
+                  </Text>
+                  <Text style={tw`mt-1 text-sm leading-5 text-slate-600`}>
+                    Add authorized staff to the clinical workspace.
                   </Text>
                 </View>
 
@@ -612,16 +772,16 @@ export default function Admin() {
                   <View style={tw`mt-2 flex-row gap-2`}>
                     {([
                       ["nurse", "Nurse"],
-                      ["primary_healthcare", "Primary healthcare"],
+                      ["primary_healthcare", "Village health worker"],
                     ] as const).map(([role, label]) => (
                       <Pressable
                         key={role}
                         accessibilityRole="button"
                         accessibilityState={{ selected: accountRole === role }}
                         onPress={() => setAccountRole(role)}
-                        style={tw`flex-1 items-center rounded-xl border px-3 py-3 ${accountRole === role ? "border-sky-500 bg-sky-50" : "border-slate-200 bg-white"}`}
+                        style={tw`flex-1 items-center rounded-xl border px-3 py-3 ${accountRole === role ? "border-teal-600 bg-teal-50" : "border-slate-200 bg-white"}`}
                       >
-                        <Text style={tw`text-sm font-semibold ${accountRole === role ? "text-sky-800" : "text-slate-600"}`}>{label}</Text>
+                        <Text style={tw`text-sm font-semibold ${accountRole === role ? "text-teal-800" : "text-slate-600"}`}>{label}</Text>
                       </Pressable>
                     ))}
                   </View>
@@ -632,7 +792,7 @@ export default function Admin() {
                     disabled={isSubmitting}
                     onPress={submit}
                     style={({ pressed }) => [
-                      tw`mt-5 flex-row items-center justify-center rounded-xl bg-[#0EA5E9] py-4`,
+                      tw`mt-5 flex-row items-center justify-center rounded-xl bg-[#087C70] py-4`,
                       (pressed ||
                         isSubmitting) &&
                         tw`opacity-70`,
@@ -653,7 +813,7 @@ export default function Admin() {
                     >
                       {isSubmitting
                         ? "Creating account..."
-                        : `Create ${accountRole === "nurse" ? "nurse" : "primary healthcare"} account`}
+                        : `Create ${accountRole === "nurse" ? "nurse" : "village health worker"} account`}
                     </Text>
                   </Pressable>
 
@@ -670,13 +830,13 @@ export default function Admin() {
             <View style={tw`px-4 pt-5`}>
 
               <View
-                style={tw`overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-sm`}
+                style={tw`overflow-hidden rounded-2xl border border-[#D8ECE4] bg-white shadow-sm`}
               >
 
                 {/* HEADER */}
 
                 <View
-                  style={tw`bg-[#F0F9FF] px-5 py-5`}
+                  style={tw`bg-[#EAF8F2] px-5 py-5`}
                 >
                   <View
                     style={tw`h-12 w-12 items-center justify-center rounded-2xl bg-white`}
@@ -697,7 +857,7 @@ export default function Admin() {
                   <Text
                     style={tw`mt-1 text-sm leading-5 text-slate-600`}
                   >
-        
+                    Use a strong password that is unique to your administrator account.
                   </Text>
                 </View>
 
@@ -740,10 +900,8 @@ export default function Admin() {
                       color="#64748B"
                     />
 
-                    <Text
-                      style={tw`ml-2 flex-1 text-xs leading-5 text-slate-500`}
-                    >
-            
+                    <Text style={tw`ml-2 flex-1 text-xs leading-5 text-slate-500`}>
+                      Choose a password with at least 8 characters.
                     </Text>
                   </View>
 
@@ -755,7 +913,7 @@ export default function Admin() {
                       updateAdminPassword
                     }
                     style={({ pressed }) => [
-                      tw`mt-4 flex-row items-center justify-center rounded-xl bg-[#0EA5E9] py-4`,
+                      tw`mt-4 flex-row items-center justify-center rounded-xl bg-[#087C70] py-4`,
                       (pressed ||
                         isChangingPassword) &&
                         tw`opacity-60`,
@@ -790,10 +948,10 @@ export default function Admin() {
                 subtitle="Manage healthcare staff accounts"
                 rightContent={
                   <View
-                    style={tw`min-w-10 items-center justify-center rounded-full bg-sky-100 px-3 py-2`}
+                    style={tw`min-w-10 items-center justify-center rounded-full bg-teal-100 px-3 py-2`}
                   >
                     <Text
-                      style={tw`text-sm font-bold text-sky-800`}
+                      style={tw`text-sm font-bold text-teal-800`}
                     >
                       {nurses.length}
                     </Text>
@@ -817,17 +975,8 @@ export default function Admin() {
                     />
                   </View>
 
-                  <Text
-                    style={tw`mt-4 text-base font-bold text-slate-700`}
-                  >
-                  
-                  </Text>
-
-                  <Text
-                    style={tw`mt-1 text-center text-sm text-slate-500`}
-                  >
-          
-                  </Text>
+                  <Text style={tw`mt-4 text-base font-bold text-slate-700`}>No staff accounts yet</Text>
+                  <Text style={tw`mt-1 text-center text-sm text-slate-500`}>Create a staff account to see it listed here.</Text>
                 </View>
               ) : null}
 
@@ -842,7 +991,7 @@ export default function Admin() {
                 
 
                   <View
-                    style={tw`h-12 w-12 items-center justify-center rounded-2xl bg-sky-50`}
+                    style={tw`h-12 w-12 items-center justify-center rounded-2xl bg-teal-50`}
                   >
                     <Ionicons
                       name="person-outline"
@@ -886,7 +1035,7 @@ export default function Admin() {
                       <Text
                         style={tw`text-[10px] font-bold text-emerald-700`}
                       >
-                        {nurse.role === "primary_healthcare" ? "PRIMARY HEALTHCARE" : "REGISTERED NURSE"}
+                        {nurse.role === "primary_healthcare" ? "VILLAGE HEALTH WORKER" : "REGISTERED NURSE"}
                       </Text>
                     </View>
                   </View>
@@ -948,6 +1097,101 @@ export default function Admin() {
             </View>
           ) : null}
 
+          {activePage === "assessments" ? (
+            <View style={tw`px-4 pt-5`}>
+              <SectionHeading
+                eyebrow="Clinic-wide records"
+                title={assessmentStaffRole === "primary_healthcare" ? "Village health worker assessments" : assessmentStaffRole === "nurse" ? "Nurse assessments" : "Patient assessments"}
+                subtitle={assessmentStaffRole ? "Records for this staff group." : "Choose a staff group to view its records."}
+                rightContent={
+                  assessmentStaffRole ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => {
+                        setAssessmentStaffRole(null);
+                        setAssessmentQuery("");
+                        setAssessmentExportError("");
+                      }}
+                      style={tw`rounded-lg border border-slate-200 bg-white px-3 py-2`}
+                    >
+                      <Text style={tw`text-xs font-bold text-[#087C70]`}>All staff groups</Text>
+                    </Pressable>
+                  ) : (
+                    <View style={tw`min-w-10 items-center justify-center rounded-full bg-teal-100 px-3 py-2`}>
+                      <Text style={tw`text-sm font-bold text-teal-800`}>{clinicAssessments.length}</Text>
+                    </View>
+                  )
+                }
+              />
+
+              {assessmentStaffRole ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={isExportingAssessments || selectedGroupCount === 0}
+                  onPress={() => void exportClinicAssessments()}
+                  style={({ pressed }) => [
+                    tw`mt-3 self-end flex-row items-center rounded-xl bg-[#087C70] px-4 py-3`,
+                    (pressed || isExportingAssessments || selectedGroupCount === 0) && tw`opacity-60`,
+                  ]}
+                >
+                  <Ionicons name={isExportingAssessments ? "hourglass-outline" : "download-outline"} size={17} color="white" />
+                  <Text style={tw`ml-2 text-xs font-bold text-white`}>
+                    {isExportingAssessments ? "Preparing Excel…" : `Download ${assessmentStaffRole === "nurse" ? "nurse" : "village health worker"} Excel`}
+                  </Text>
+                </Pressable>
+              ) : null}
+
+              {assessmentExportError ? (
+                <View style={tw`mt-3`}>
+                  <MessageCard message={assessmentExportError} type="error" />
+                </View>
+              ) : null}
+
+              {assessmentStaffRole ? (
+                <View style={tw`mt-4 flex-row items-center rounded-xl border border-slate-200 bg-white px-3`}>
+                  <Ionicons name="search-outline" size={18} color="#94A3B8" />
+                  <TextInput
+                    accessibilityLabel="Search patient assessment records"
+                    value={assessmentQuery}
+                    onChangeText={setAssessmentQuery}
+                    placeholder="Search patient, result, symptoms, or staff"
+                    placeholderTextColor="#94A3B8"
+                    style={tw`ml-2 flex-1 py-3 text-xs text-slate-900`}
+                  />
+                </View>
+              ) : null}
+
+              {assessmentError ? (
+                <MessageCard message={assessmentError} type="error" />
+              ) : null}
+
+              {isLoadingAssessments ? (
+                <View style={tw`mt-4 rounded-xl border border-slate-200 bg-white px-4 py-6`}>
+                  <Text style={tw`text-center text-sm font-medium text-slate-500`}>Loading clinic assessments…</Text>
+                </View>
+              ) : assessmentStaffRole ? (
+                <AdminAssessmentTable
+                  title={assessmentStaffRole === "primary_healthcare" ? "Village health worker assessments" : "Nurse assessments"}
+                  assessments={selectedAssessments}
+                  hasSearch={Boolean(assessmentQuery.trim())}
+                />
+              ) : (
+                <View style={tw`mt-4`}>
+                  <AssessmentGroupButton
+                    title="Village health worker assessments"
+                    count={primaryHealthcareAssessments.length}
+                    onPress={() => setAssessmentStaffRole("primary_healthcare")}
+                  />
+                  <AssessmentGroupButton
+                    title="Nurse assessments"
+                    count={nurseAssessments.length}
+                    onPress={() => setAssessmentStaffRole("nurse")}
+                  />
+                </View>
+              )}
+            </View>
+          ) : null}
+
           {/* ==================================================
               MESSAGE
           ================================================== */}
@@ -990,7 +1234,7 @@ export default function Admin() {
             </View>
 
             <Text
-              style={tw`ml-2 font-bold text-sky-700`}
+              style={tw`ml-2 font-bold text-teal-700`}
             >
               Sign out
             </Text>
@@ -1029,8 +1273,11 @@ export default function Admin() {
 
               {/* MENU HEADER */}
 
-              <View
-                style={tw`bg-[#0EA5E9] px-5 py-5`}
+              <LinearGradient
+                colors={["#075B51", "#06463F"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={tw`px-5 py-5`}
               >
                 <View
                   style={tw`flex-row items-center`}
@@ -1055,13 +1302,13 @@ export default function Admin() {
                     </Text>
 
                     <Text
-                      style={tw`mt-0.5 text-xs text-sky-100`}
+                      style={tw`mt-0.5 text-xs text-emerald-100`}
                     >
                       Dashboard menu
                     </Text>
                   </View>
                 </View>
-              </View>
+              </LinearGradient>
 
               {/* MENU ITEMS */}
 
@@ -1093,7 +1340,7 @@ export default function Admin() {
                         }) => [
                           tw`mb-1 flex-row items-center rounded-xl px-3 py-3.5`,
                           isActive &&
-                            tw`bg-sky-50`,
+                            tw`bg-teal-50`,
                           pressed &&
                             tw`opacity-70`,
                         ]}
@@ -1105,7 +1352,7 @@ export default function Admin() {
                           style={[
                             tw`h-9 w-9 items-center justify-center rounded-xl`,
                             isActive
-                              ? tw`bg-sky-100`
+                              ? tw`bg-teal-100`
                               : tw`bg-slate-100`,
                           ]}
                         >
@@ -1126,7 +1373,7 @@ export default function Admin() {
                           style={[
                             tw`ml-3 text-sm font-semibold`,
                             isActive
-                              ? tw`text-sky-800`
+                              ? tw`text-teal-800`
                               : tw`text-slate-700`,
                           ]}
                         >
@@ -1171,6 +1418,134 @@ export default function Admin() {
   );
 }
 
+function AdminAssessmentCell({
+  width,
+  header,
+  strong,
+  children,
+}: {
+  width: number;
+  header?: boolean;
+  strong?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Text
+      numberOfLines={2}
+      style={[
+        tw`${header ? "text-[10px] font-bold uppercase tracking-wide text-[#55746A]" : strong ? "text-[11px] font-bold text-[#143B4F]" : "text-[10px] leading-4 text-slate-600"} px-3`,
+        { width },
+      ]}
+    >
+      {children}
+    </Text>
+  );
+}
+
+function AdminAssessmentTable({
+  title,
+  assessments,
+  hasSearch,
+}: {
+  title: string;
+  assessments: LocalAssessment[];
+  hasSearch: boolean;
+}) {
+  return (
+    <View style={tw`mt-5`}>
+      <View style={tw`mb-2 flex-row items-center justify-between`}>
+        <Text style={tw`text-sm font-bold text-[#143B4F]`}>{title}</Text>
+        <Text style={tw`text-xs font-medium text-slate-500`}>{assessments.length} records</Text>
+      </View>
+      {assessments.length ? (
+        <View style={tw`overflow-hidden rounded-xl border border-[#E1ECE7] bg-white`}>
+          <ScrollView horizontal showsHorizontalScrollIndicator>
+            <View>
+              <View style={tw`h-11 flex-row items-center bg-[#EAF8F2]`}>
+                <AdminAssessmentCell width={160} header>Patient</AdminAssessmentCell>
+                <AdminAssessmentCell width={100} header>Date</AdminAssessmentCell>
+                <AdminAssessmentCell width={60} header>Age</AdminAssessmentCell>
+                <AdminAssessmentCell width={95} header>Gender</AdminAssessmentCell>
+                <AdminAssessmentCell width={80} header>Temp.</AdminAssessmentCell>
+                <AdminAssessmentCell width={105} header>Blood pressure</AdminAssessmentCell>
+                <AdminAssessmentCell width={200} header>Symptoms</AdminAssessmentCell>
+                <AdminAssessmentCell width={150} header>Result</AdminAssessmentCell>
+                <AdminAssessmentCell width={90} header>Confidence</AdminAssessmentCell>
+                <AdminAssessmentCell width={220} header>Recommendation</AdminAssessmentCell>
+                <AdminAssessmentCell width={140} header>Assessed by</AdminAssessmentCell>
+                <AdminAssessmentCell width={95} header>Sync</AdminAssessmentCell>
+              </View>
+              {assessments.map((assessment) => (
+                <View key={assessment.id} style={tw`min-h-[64px] flex-row items-center border-t border-[#EDF2EF]`}>
+                  <AdminAssessmentCell width={160} strong>{assessment.patient_name || "Patient record"}</AdminAssessmentCell>
+                  <AdminAssessmentCell width={100}>{formatAdminAssessmentDate(assessment.created_at)}</AdminAssessmentCell>
+                  <AdminAssessmentCell width={60}>{`${assessment.age} yrs`}</AdminAssessmentCell>
+                  <AdminAssessmentCell width={95}>{assessment.gender || "—"}</AdminAssessmentCell>
+                  <AdminAssessmentCell width={80}>{`${assessment.temperature} °C`}</AdminAssessmentCell>
+                  <AdminAssessmentCell width={105}>{assessment.blood_pressure || "—"}</AdminAssessmentCell>
+                  <AdminAssessmentCell width={200}>{assessment.symptoms || "—"}</AdminAssessmentCell>
+                  <AdminAssessmentCell width={150} strong>{assessment.disease || "Review recommended"}</AdminAssessmentCell>
+                  <AdminAssessmentCell width={90}>{assessment.confidence == null ? "—" : `${Math.round(assessment.confidence * 100)}%`}</AdminAssessmentCell>
+                  <AdminAssessmentCell width={220}>{assessment.recommendation || "—"}</AdminAssessmentCell>
+                  <AdminAssessmentCell width={140}>{assessment.nurse_name || "Unknown staff"}</AdminAssessmentCell>
+                  <View style={tw`w-[95px] px-3`}>
+                    <View style={tw`self-start rounded-full ${assessment.sync_status === "synced" ? "bg-[#EAF8F2]" : assessment.sync_status === "conflict" ? "bg-rose-50" : "bg-amber-50"} px-2 py-1`}>
+                      <Text style={tw`text-[9px] font-bold ${assessment.sync_status === "synced" ? "text-[#087C70]" : assessment.sync_status === "conflict" ? "text-rose-700" : "text-amber-700"}`}>
+                        {assessment.sync_status === "synced" ? "SYNCED" : assessment.sync_status === "conflict" ? "CONFLICT" : "PENDING"}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
+      ) : (
+        <View style={tw`items-center rounded-xl border border-dashed border-[#C8DCD2] bg-white px-5 py-7`}>
+          <Text style={tw`text-xs font-medium text-slate-500`}>
+            {hasSearch ? "No matching records in this table." : "No assessments recorded for this staff group yet."}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function AssessmentGroupButton({
+  title,
+  count,
+  onPress,
+}: {
+  title: string;
+  count: number;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        tw`mb-3 flex-row items-center rounded-xl border border-[#E1ECE7] bg-white px-4 py-4`,
+        pressed && tw`opacity-70`,
+      ]}
+    >
+      <View style={tw`h-10 w-10 items-center justify-center rounded-xl bg-teal-50`}>
+        <Ionicons name="file-tray-outline" size={20} color="#087C70" />
+      </View>
+      <View style={tw`ml-3 flex-1`}>
+        <Text style={tw`text-sm font-bold text-[#143B4F]`}>{title}</Text>
+        <Text style={tw`mt-1 text-xs text-slate-500`}>{count} assessment records</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color="#64748B" />
+    </Pressable>
+  );
+}
+
+function formatAdminAssessmentDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString();
+}
+
 /*
 ============================================================
 SECTION HEADING
@@ -1195,13 +1570,13 @@ function SectionHeading({
       <View style={tw`flex-1`}>
 
         <Text
-          style={tw`text-[10px] font-bold uppercase tracking-widest text-sky-600`}
+          style={tw`text-[10px] font-bold uppercase tracking-widest text-teal-700`}
         >
           {eyebrow}
         </Text>
 
         <Text
-          style={tw`mt-1 text-xl font-bold text-slate-900`}
+          style={tw`mt-1 text-xl font-bold text-[#143B4F]`}
         >
           {title}
         </Text>
@@ -1233,59 +1608,49 @@ function DashboardCard({
   icon,
   title,
   subtitle,
+  meta,
+  width = "100%",
   children,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   subtitle: string;
+  meta?: string;
+  width?: `${number}%`;
   children: ReactNode;
 }) {
   return (
     <View
-      style={tw`mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm`}
+      style={[
+        tw`overflow-hidden rounded-2xl border border-[#E0EDF1] bg-white shadow-sm`,
+        { width },
+      ]}
     >
 
       {/* CARD HEADER */}
 
       <View style={tw`px-4 pt-4`}>
         <View
-          style={tw`flex-row items-center`}
+          style={tw`flex-row items-center justify-between`}
         >
 
-          <View
-            style={tw`h-9 w-9 items-center justify-center rounded-xl bg-sky-50`}
-          >
-            <Ionicons
-              name={icon}
-              size={18}
-              color={BLUE}
-            />
+          <View style={tw`flex-1 flex-row items-center`}>
+            <View style={tw`h-9 w-9 items-center justify-center rounded-xl bg-[#E4F6F0]`}>
+              <Ionicons name={icon} size={18} color={BLUE} />
+            </View>
+            <View style={tw`ml-3 flex-1`}>
+              <Text style={tw`text-sm font-bold text-[#07575B]`}>{title}</Text>
+              <Text style={tw`mt-0.5 text-[10px] leading-4 text-slate-500`}>{subtitle}</Text>
+            </View>
           </View>
 
-          <View
-            style={tw`ml-3 flex-1`}
-          >
-            <Text
-              style={tw`text-base font-bold text-slate-900`}
-            >
-              {title}
-            </Text>
-
-            <Text
-              style={tw`mt-0.5 text-xs text-slate-500`}
-            >
-              {subtitle}
-            </Text>
-          </View>
-
+          {meta ? <Text style={tw`ml-2 text-[9px] text-slate-400`}>{meta}</Text> : null}
         </View>
       </View>
 
       {/* CONTENT */}
 
-      <View
-        style={tw`px-3 pb-3 pt-2`}
-      >
+      <View style={tw`px-3 pb-3 pt-2`}>
         {children}
       </View>
     </View>
@@ -1303,50 +1668,51 @@ function AdminMetric({
   label,
   value,
   detail,
+  tone,
+  width,
+  onAction,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: number;
   detail?: string;
+  tone: "green" | "blue" | "purple" | "orange";
+  width: `${number}%`;
+  onAction?: () => void;
 }) {
+  const toneStyles = {
+    green: { backgroundColor: "#EAF7F0", borderColor: "#D8EDE2", iconBackgroundColor: "#D5F1E5", color: "#167663" },
+    blue: { backgroundColor: "#EFF6FC", borderColor: "#DBEAF5", iconBackgroundColor: "#DCEEFF", color: "#3979B5" },
+    purple: { backgroundColor: "#F5F0FB", borderColor: "#E9DDF7", iconBackgroundColor: "#E9DDF7", color: "#8052C8" },
+    orange: { backgroundColor: "#FFF6EA", borderColor: "#F4E4CE", iconBackgroundColor: "#FCE8C7", color: "#C27824" },
+  }[tone];
+
   return (
     <View
-      style={tw`flex-1 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm`}
+      style={[
+        tw`mb-3 min-w-0 flex-row items-center rounded-2xl border p-3 shadow-sm`,
+        { width, backgroundColor: toneStyles.backgroundColor, borderColor: toneStyles.borderColor },
+      ]}
     >
 
       <View
-        style={tw`h-11 w-11 items-center justify-center rounded-xl bg-sky-50`}
+        style={[tw`h-10 w-10 items-center justify-center rounded-xl`, { backgroundColor: toneStyles.iconBackgroundColor }]}
       >
-        <Ionicons
-          name={icon}
-          size={21}
-          color={BLUE}
-        />
+        <Ionicons name={icon} size={20} color={toneStyles.color} />
       </View>
 
-      <Text
-        style={tw`mt-4 text-2xl font-bold text-slate-900`}
-      >
-        {value}
-      </Text>
-
-      <Text
-        style={tw`mt-1 text-xs font-semibold text-slate-500`}
-      >
-        {label}
-      </Text>
-
-      {detail ? (
-        <View
-          style={tw`mt-2 self-start rounded-full bg-amber-50 px-2 py-1`}
-        >
-          <Text
-            style={tw`text-[9px] font-bold text-amber-700`}
-          >
-            {detail}
-          </Text>
-        </View>
-      ) : null}
+      <View style={tw`ml-3 min-w-0 flex-1`}>
+        <Text numberOfLines={1} style={tw`text-[10px] font-semibold text-[#52718A]`}>{label}</Text>
+        <Text style={tw`mt-0.5 text-xl font-bold text-[#143B4F]`}>{value}</Text>
+        {detail ? onAction ? (
+          <Pressable accessibilityRole="button" onPress={onAction} style={tw`mt-1 flex-row items-center`}>
+            <Text style={[tw`text-[9px] font-bold`, { color: toneStyles.color }]}>{detail}</Text>
+            <Ionicons name="arrow-forward" size={11} color={toneStyles.color} style={tw`ml-1`} />
+          </Pressable>
+        ) : (
+          <Text numberOfLines={1} style={tw`mt-1 text-[9px] leading-3 text-slate-500`}>{detail}</Text>
+        ) : null}
+      </View>
 
     </View>
   );
@@ -1512,7 +1878,7 @@ function LoadingCard() {
     >
 
       <View
-        style={tw`h-14 w-14 items-center justify-center rounded-full bg-sky-50`}
+        style={tw`h-14 w-14 items-center justify-center rounded-full bg-teal-50`}
       >
         <Ionicons
           name="analytics-outline"

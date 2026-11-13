@@ -51,7 +51,18 @@ nurse is currently signed in; administrator accounts can also check status and
 trigger this sync. Failed uploads stay queued in SQLite and become eligible for
 retry after one second.
 
-The current artifact is `logistic-single-symptom-2`. It compares all disease
-classes when at least one recognized symptom is supplied and returns ranked
-alternatives. A one-symptom result is decision support only and must be reviewed
-by a qualified healthcare professional.
+The current demo/testing artifact is `logistic-single-symptom-7`. It excludes
+Ebola virus disease from its training dataset and preserves the removal of
+selected generic symptoms (including headache, vomiting, itching, fever,
+fatigue, diarrhoea, sweating, skin rash, and high fever) from the original CSV
+lines 386-637. The rural-health disease updates add symptoms to matching
+existing labels, map related conditions to suitable existing categories, and
+add separate classes only where no suitable category exists. Missing
+disease-specific temperatures are left blank in the source dataset and use the
+training dataset's median temperature during model training. The model was
+retrained from the user-provided Desktop `dataset_clean.csv` and compares the
+disease classes when at least one recognized symptom is supplied. It returns
+ranked alternatives and is not for clinical use. A result is decision support
+only and must be reviewed by a qualified healthcare professional. Each
+recommendation includes a clinician-directed note that blood tests may be
+ordered when indicated and should follow local clinical guidance.

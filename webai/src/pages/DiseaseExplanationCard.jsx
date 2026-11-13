@@ -10,7 +10,7 @@ function DiseaseExplanationCard({ disease, showClinicalDetails = true, isPrimary
       <header className="disease-explanation-heading">
         <h3>{disease.disease}</h3>
         <span className="disease-confidence">
-          {isPrimaryHealthcare ? 'Model confidence ' : ''}{Math.round((disease.confidence || 0) * 100)}%
+          {Math.round((disease.confidence || 0) * 100)}%
         </span>
       </header>
 
@@ -23,7 +23,7 @@ function DiseaseExplanationCard({ disease, showClinicalDetails = true, isPrimary
 
       {features.length > 0 && (
         <>
-        <p className="disease-why">{isPrimaryHealthcare ? 'Why the model suggested this' : 'Model factors'}</p>
+        <p className="disease-why">{isPrimaryHealthcare ? 'Why was this disease predicted?' : 'Why predicted this'}</p>
         <ul className="disease-feature-list">
           {features.map((feature) => {
             const impact = Math.max(
@@ -38,15 +38,13 @@ function DiseaseExplanationCard({ disease, showClinicalDetails = true, isPrimary
                 <div className="disease-feature-heading">
                   <strong>{label}</strong>
                   <span className={`feature-direction ${direction}`}>
-                    {isPrimaryHealthcare
-                      ? direction === 'supports' ? 'Pushed toward match' : 'Pushed away from match'
-                      : direction === 'supports' ? 'Supports' : 'Opposes'}
+                    {direction === 'supports' ? 'Supports' : 'Opposes'}
                   </span>
                 </div>
                 <div
                   className="disease-feature-track"
                   role="meter"
-                  aria-label={`${label} relative model contribution`}
+                  aria-label={`${label} relative contribution`}
                   aria-valuemin="0"
                   aria-valuemax="100"
                   aria-valuenow={impact}
@@ -57,11 +55,6 @@ function DiseaseExplanationCard({ disease, showClinicalDetails = true, isPrimary
             )
           })}
         </ul>
-        {isPrimaryHealthcare && (
-          <p className="disease-explanation-note">
-            These recorded factors influenced the model, but do not confirm a disease. Bar lengths compare factors within this result; they are not measures of risk.
-          </p>
-        )}
         </>
       )}
     </article>

@@ -99,22 +99,22 @@ export default function ChatConversation() {
 	};
 
 	return (
-		<SafeAreaView style={tw`flex-1 bg-slate-50`}>
+		<SafeAreaView style={tw`flex-1 bg-[#F3F7F5]`}>
 			<Stack.Screen options={{ headerShown: false }} />
 			<Navbar variant="hero" />
 			<KeyboardAvoidingView style={tw`flex-1`} behavior={Platform.OS === "ios" ? "padding" : undefined}>
 				<View style={tw`flex-1 px-4 pb-4 pt-4`}>
 					<View style={tw`mb-4 flex-row items-center justify-between`}>
 						<View>
-							<Text style={tw`text-xs font-bold text-teal-700`}>CONVERSATION</Text>
-							<Text style={tw`mt-1 text-2xl font-bold text-slate-900`}>{nurseName}</Text>
+							<Text style={tw`text-[10px] font-bold tracking-[1.5px] text-teal-700`}>CONVERSATION</Text>
+							<Text style={tw`mt-1 text-2xl font-bold text-[#143B4F]`}>{nurseName}</Text>
 						</View>
 						<Pressable accessibilityLabel="Back to nurse list" onPress={() => router.replace("/Chat")} style={tw`h-10 w-10 items-center justify-center rounded-full bg-white`}>
 							<Ionicons name="arrow-back" size={20} color="#0F766E" />
 						</Pressable>
 					</View>
 
-					<View style={tw`flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white`}>
+					<View style={tw`flex-1 overflow-hidden rounded-[20px] border border-[#E1ECE7] bg-white shadow-sm`}>
 						<View style={tw`flex-row items-center justify-between border-b border-slate-100 px-4 py-3`}>
 							<Text style={tw`text-sm font-bold text-slate-800`}>Messages</Text>
 							<Pressable accessibilityLabel="Refresh messages" onPress={() => void refreshMessages()}>
@@ -150,7 +150,7 @@ export default function ChatConversation() {
 						/>
 						<View style={tw`flex-row items-end border-t border-slate-100 px-3 py-3`}>
 							<TextInput value={draft} onChangeText={setDraft} placeholder="Write a message" maxLength={4000} multiline style={tw`max-h-24 min-h-11 flex-1 rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-800`} />
-							<Pressable accessibilityLabel="Send message" disabled={!draft.trim() || isSending} onPress={() => void send()} style={[tw`ml-2 h-11 w-11 items-center justify-center rounded-full`, draft.trim() && !isSending ? tw`bg-teal-700` : tw`bg-slate-300`]}>
+							<Pressable accessibilityLabel="Send message" disabled={!draft.trim() || isSending} onPress={() => void send()} style={[tw`ml-2 h-11 w-11 items-center justify-center rounded-full`, draft.trim() && !isSending ? tw`bg-[#087C70]` : tw`bg-slate-300`]}>
 								{isSending ? <ActivityIndicator size="small" color="white" /> : <Ionicons name="send" size={17} color="white" />}
 							</Pressable>
 						</View>

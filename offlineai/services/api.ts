@@ -1,6 +1,8 @@
 import axios, { AxiosError } from "axios";
 import Constants from "expo-constants";
+import * as FileSystem from "expo-file-system/legacy";
 import { Platform } from "react-native";
+import * as Sharing from "expo-sharing";
 import { z } from "zod";
 
 function getApiUrl(): string {
@@ -95,12 +97,61 @@ export type AdminAnalytics = {
 	dailyPatients: { date: string; label: string; value: number }[];
 	dailyNurses: { date: string; label: string; value: number }[];
 	assessmentsByNurse: { label: string; value: number }[];
+	assessmentUsageByRole: { label: string; role: StaffRole; value: number }[];
 	topDiseases: { label: string; value: number }[];
 };
 
 export async function getAdminAnalytics(): Promise<AdminAnalytics> {
 	const response = await api.get<AdminAnalytics>("/api/auth/admin/analytics");
 	return response.data;
+}
+
+export async function listAdminAssessments(): Promise<LocalAssessment[]> {
+	const response = await api.get<{ assessments: LocalAssessment[] }>("/api/auth/admin/assessments");
+	return response.data.assessments;
+}
+
+export async function downloadAdminAssessmentWorkbook(staffRole: StaffRole): Promise<void> {
+	const filename = `clinic-assessments-${staffRole}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+	const path = `/api/auth/admin/assessments/export?staff_role=${staffRole}`;
+	if (Platform.OS === "web") {
+		const response = await api.get<Blob>(path, { responseType: "blob" });
+		const url = window.URL.createObjectURL(response.data);
+		const link = document.createElement("a");
+		link.href = url;
+		link.download = filename;
+		document.body.appendChild(link);
+		link.click();
+		link.remove();
+		window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+		return;
+	}
+
+	if (!FileSystem.cacheDirectory) {
+		throw new Error("This device does not have a writable cache directory.");
+	}
+	if (!(await Sharing.isAvailableAsync())) {
+		throw new Error("File sharing is not available on this device.");
+	}
+	if (!accessToken) {
+		throw new Error("Sign in as an administrator to export clinic assessments.");
+	}
+
+	const uri = `${FileSystem.cacheDirectory}${filename}`;
+	const download = await FileSystem.downloadAsync(`${apiUrl}${path}`, uri, {
+		headers: { Authorization: `Bearer ${accessToken}` },
+	});
+	if (download.status < 200 || download.status >= 300) {
+		await FileSystem.deleteAsync(download.uri, { idempotent: true });
+		throw new Error(download.status === 401 || download.status === 403
+			? "Administrator access is required to export clinic assessments."
+			: "The assessment workbook could not be downloaded.");
+	}
+	await Sharing.shareAsync(download.uri, {
+		mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		dialogTitle: "Export clinic assessments",
+		UTI: "org.openxmlformats.spreadsheetml.sheet",
+	});
 }
 
 export async function listNurses(): Promise<RegisteredNurse[]> {
@@ -232,6 +283,7 @@ export type AssessmentResult = AssessmentRequest & PredictionResult & {
 export type LocalAssessment = {
 	id: string;
 	nurse_name: string;
+	staff_role?: StaffRole | null;
 	patient_name: string;
 	age: number;
 	gender?: string;

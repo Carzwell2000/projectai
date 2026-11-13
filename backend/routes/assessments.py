@@ -142,14 +142,9 @@ def process_assessment(request: AssessmentRequest, nurse_id: str) -> dict[str, A
 @router.post("/triage")
 def triage_assessment(
     request: AssessmentRequest,
-    account: dict[str, str] = Depends(get_current_account),
+    _account: dict[str, str] = Depends(get_current_account),
 ) -> dict[str, Any]:
     """Return deterministic triage without persisting an encounter."""
-    if account["role"] == "primary_healthcare":
-        raise HTTPException(
-            status_code=403,
-            detail="Triage recommendations are not available for this account.",
-        )
     return infer_triage(
         age=request.age,
         temperature=request.temperature,

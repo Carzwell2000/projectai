@@ -37,7 +37,7 @@ function AssessmentResult({ result, explanation, explanationPending, explanation
         </div>
       </div>
 
-      {!isPrimaryHealthcare && result.triage && (
+      {result.triage && (
         <section className={`triage-card triage-${result.triage.level}`} aria-label="Triage priority">
           <div className="triage-heading">
             <p className="eyebrow">TRIAGE PRIORITY</p>
@@ -61,9 +61,9 @@ function AssessmentResult({ result, explanation, explanationPending, explanation
         </section>
       )}
 
-      {explanationPending && <p className="explanation-status" role="status">{isPrimaryHealthcare ? 'Loading additional disease predictions…' : 'Loading model explanations…'}</p>}
+      {explanationPending && <p className="explanation-status" role="status">{isPrimaryHealthcare ? 'Loading additional disease predictions…' : 'Loading explanations…'}</p>}
       {!isPrimaryHealthcare && explanationError && <p className="form-error" role="status">Assessment saved. Explanation unavailable: {explanationError}</p>}
-      <section className="disease-explanations" aria-label="Model disease explanations">
+      <section className="disease-explanations" aria-label="Disease explanations">
         {explainedDiseases.length ? (
             explainedDiseases.map((disease) => <DiseaseExplanationCard disease={disease} showClinicalDetails={!isPrimaryHealthcare} isPrimaryHealthcare={isPrimaryHealthcare} key={disease.disease} />)
         ) : (

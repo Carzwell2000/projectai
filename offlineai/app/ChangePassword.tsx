@@ -29,7 +29,7 @@ export default function ChangePassword() {
   };
 
   return (
-    <SafeAreaView style={tw`flex-1 bg-slate-50`}>
+    <SafeAreaView style={tw`flex-1 bg-[#F3F7F5]`}>
       <Stack.Screen options={{ headerShown: false }} />
       <KeyboardAvoidingView style={tw`flex-1`} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={tw`px-5 pb-8`}>
@@ -37,12 +37,12 @@ export default function ChangePassword() {
         <Pressable onPress={() => router.replace("/Home")} style={tw`mb-8 mt-3`}>
           <Text style={tw`font-bold text-teal-700`}>Back</Text>
         </Pressable>
-        <Text style={tw`text-xs font-bold tracking-widest text-teal-700`}>ACCOUNT SECURITY</Text>
-        <Text style={tw`mt-2 text-3xl font-bold text-slate-900`}>Reset password</Text>
-        <TextInput value={currentPassword} onChangeText={setCurrentPassword} placeholder="Current password" secureTextEntry style={tw`mt-8 rounded-xl bg-white px-4 py-4`} />
-        <TextInput value={newPassword} onChangeText={setNewPassword} placeholder="New password" secureTextEntry style={tw`mt-3 rounded-xl bg-white px-4 py-4`} />
+        <Text style={tw`text-[10px] font-bold tracking-[1.7px] text-teal-700`}>ACCOUNT SECURITY</Text>
+        <Text style={tw`mt-1 text-2xl font-bold text-[#143B4F]`}>Reset password</Text>
+        <TextInput value={currentPassword} onChangeText={setCurrentPassword} placeholder="Current password" placeholderTextColor="#94A3A0" secureTextEntry style={tw`mt-6 rounded-2xl border border-[#E1ECE7] bg-white px-4 py-4`} />
+        <TextInput value={newPassword} onChangeText={setNewPassword} placeholder="New password" placeholderTextColor="#94A3A0" secureTextEntry style={tw`mt-3 rounded-2xl border border-[#E1ECE7] bg-white px-4 py-4`} />
         {message ? <Text style={tw`mt-4 text-sm text-amber-700`}>{message}</Text> : null}
-        <Pressable onPress={submit} style={tw`mt-6 items-center rounded-xl bg-teal-700 px-4 py-4`}>
+        <Pressable onPress={submit} style={tw`mt-6 items-center rounded-2xl bg-[#087C70] px-4 py-4`}>
           <Text style={tw`font-bold text-white`}>Update password</Text>
         </Pressable>
       </ScrollView>

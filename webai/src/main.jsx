@@ -5,7 +5,6 @@ import '@syncfusion/ej2-inputs/styles/material.css'
 import '@syncfusion/ej2-popups/styles/material.css'
 import '@syncfusion/ej2-navigations/styles/material.css'
 import '@syncfusion/ej2-splitbuttons/styles/material.css'
-import '@syncfusion/ej2-react-grids/styles/material.css'
 import './index.css'
 import App from './App.jsx'
 

@@ -35,20 +35,20 @@ export default function Results() {
   const [explanation, setExplanation] = useState<AssessmentExplanation | null>(null);
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
   const [explanationError, setExplanationError] = useState(false);
-  const hasSymptomSupportedPrimary = statusText === "prediction"
-    && Number(confidenceText || 0) >= 0.01
-    && (explanation?.predictedDiseases || []).some((item) =>
-      item.disease === diseaseText && hasReportedSymptomSupport(item.features));
-  const displayedDisease = hasSymptomSupportedPrimary ? diseaseText : "Insufficient evidence";
-  const resultAccent = isPrimaryHealthcare ? "emerald" : displayedDisease === "Insufficient evidence" ? "amber" : "teal";
-  const resultTitle = displayedDisease === "Insufficient evidence"
-    ? (isPrimaryHealthcare ? "No confident match" : "Insufficient evidence")
-    : "Possible match";
-  const resultMessage = displayedDisease === "Insufficient evidence"
-    ? (isPrimaryHealthcare
-      ? "The reported symptoms do not support a confident disease match. Please review the encounter details and consider the broader clinical context."
-      : "No disease match has sufficient support from the reported symptoms. Record specific symptoms and review the case with a qualified healthcare professional.")
-    : `${displayedDisease}${confidenceText ? ` (${Math.round(Number(confidenceText) * 100)}% confidence)` : ""}`;
+  const canShowPredictions = statusText === "prediction" && Number(confidenceText || 0) >= 0.01;
+  const symptomSupportedPredictions = canShowPredictions
+    ? (explanation?.predictedDiseases || []).filter((item) =>
+      item.confidence >= 0.01 && hasReportedSymptomSupport(item.features))
+    : [];
+  const supportedPrimaryPrediction = canShowPredictions
+    ? symptomSupportedPredictions.find((item) => item.disease === diseaseText)
+      ?? (isPrimaryHealthcare ? symptomSupportedPredictions[0] : undefined)
+    : undefined;
+  const hasSymptomSupportedPrimary = canShowPredictions
+    && symptomSupportedPredictions.some((item) => item.disease === diseaseText);
+  const hasSupportedPrediction = isPrimaryHealthcare
+    ? Boolean(supportedPrimaryPrediction)
+    : hasSymptomSupportedPrimary;
 
   useEffect(() => {
     if (!diseaseText || !symptomText || !temperature) return;
@@ -72,34 +72,22 @@ export default function Results() {
     };
   }, [bloodPressure, diseaseText, symptomText, temperature]);
   return (
-    <SafeAreaView style={tw`flex-1 bg-[#F4F8F7]`}>
+    <SafeAreaView style={tw`flex-1 bg-[#F3F7F5]`}>
       <Stack.Screen options={{ headerShown: false }} />
       <ScrollView contentContainerStyle={tw`px-5 pb-8`} showsVerticalScrollIndicator={false}>
         <Navbar variant="hero" monitorSync={false} showSyncStatus={false} />
-
-        <View style={tw`mt-4 rounded-2xl border border-[#CFE5DB] bg-[#EAF5EF] p-4`}>
-          <View style={tw`flex-row items-center`}>
-            <Ionicons name="information-circle-outline" size={20} color="#167663" />
-            <Text style={tw`ml-2 text-sm font-bold text-[#204B3C]`}>Decision support for clinician review</Text>
-          </View>
-          <Text style={tw`mt-2 text-sm leading-5 text-[#526B5F]`}>
-            {isPrimaryHealthcare
-              ? "The factors below show which recorded symptoms influenced the model's possible match. They do not confirm a disease or measure a patient's risk. Use your training and local guidance when deciding next steps."
-              : "Possible disease matches and triage guidance are based on the information entered. They are not a diagnosis or treatment plan. A qualified healthcare professional should review the findings and decide next steps."}
-          </Text>
-        </View>
 
         <Pressable onPress={() => router.replace("/Assess")} style={tw`mb-5 mt-3 flex-row items-center`}>
           <Ionicons name="arrow-back" size={20} color="#0F766E" />
           <Text style={tw`ml-2 text-sm font-bold text-teal-700`}>Back</Text>
         </Pressable>
 
-        <View style={tw`rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm`}>
+        <View style={tw`rounded-[24px] border border-[#E1ECE7] bg-white p-5 shadow-sm`}>
           <View style={tw`flex-row items-center justify-between`}>
-            <Text style={tw`text-2xl font-black text-slate-900`}>Assessment result</Text>
+            <Text style={tw`text-2xl font-black text-[#143B4F]`}>Assessment result</Text>
             <View style={tw`${isPrimaryHealthcare ? "bg-emerald-100" : "bg-teal-100"} rounded-full px-3 py-1.5`}>
               <Text style={tw`${isPrimaryHealthcare ? "text-emerald-700" : "text-teal-700"} text-[10px] font-bold uppercase tracking-[1.5px]`}>
-                {isPrimaryHealthcare ? "Primary care" : "Clinical review"}
+                {isPrimaryHealthcare ? "Village health worker" : "Clinical review"}
               </Text>
             </View>
           </View>
@@ -128,13 +116,15 @@ export default function Results() {
 
         {diseaseText ? (
           <>
-            {!isPrimaryHealthcare && triageResult ? <TriageCard triage={triageResult} /> : null}
-            <ResultCard
+            {triageResult ? <TriageCard triage={triageResult} /> : null}
+            {!hasSupportedPrediction ? <ResultCard
               icon="medkit-outline"
-              accent={resultAccent}
-              title={resultTitle}
-              message={resultMessage}
-            />
+              accent={isPrimaryHealthcare ? "emerald" : "amber"}
+              title="Insufficient evidence"
+              message={isPrimaryHealthcare
+                ? ""
+                : "No disease match has sufficient support from the reported symptoms. Record specific symptoms and review the case with a qualified healthcare professional."}
+            /> : null}
             {modelSymptoms.length ? <ModelSymptoms symptoms={modelSymptoms} /> : null}
             {!isPrimaryHealthcare && explanationError ? <ResultCard icon="list-outline" accent="amber" title="Recommendation" message={recommendationText || "Review this result with a qualified healthcare professional."} /> : null}
             <DiseaseExplanations
@@ -182,7 +172,7 @@ function parseSymptoms(value: string): string[] {
 
 function ModelSymptoms({ symptoms }: { symptoms: string[] }) {
   return (
-    <View style={tw`mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm`}>
+    <View style={tw`mt-6 rounded-[20px] border border-[#E1ECE7] bg-white p-5 shadow-sm`}>
       <View style={tw`flex-row items-center`}>
         <View style={tw`h-9 w-9 items-center justify-center rounded-xl bg-emerald-50`}>
           <Ionicons name="sparkles-outline" size={18} color="#047857" />
@@ -222,10 +212,11 @@ function DiseaseExplanations({ explanation, isLoading, hasError, showClinicalDet
   }
 
   if (hasError) {
+    if (!showClinicalDetails) return null;
     return (
       <View style={tw`mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-5`}>
         <Text style={tw`text-base font-bold text-amber-900`}>{showClinicalDetails ? "Disease explanations unavailable" : "Additional predictions unavailable"}</Text>
-        <Text style={tw`mt-2 text-sm leading-5 text-amber-800`}>The primary prediction is available, but additional disease results could not be loaded.</Text>
+        {showClinicalDetails ? <Text style={tw`mt-2 text-sm leading-5 text-amber-800`}>The primary prediction is available, but additional disease results could not be loaded.</Text> : null}
       </View>
     );
   }
@@ -250,11 +241,10 @@ function DiseaseExplanation({ explanation, showClinicalDetails, isPrimaryHealthc
   const displayedFeatures = explanation.features;
   const maximumContribution = Math.max(...displayedFeatures.map((item) => Math.abs(item.contribution)), 1);
   return (
-    <View style={tw`rounded-3xl border border-slate-200 bg-white p-5 shadow-sm`}>
+    <View style={tw`rounded-[20px] border border-[#E1ECE7] bg-white p-5 shadow-sm`}>
       <View style={tw`flex-row items-center justify-between`}>
         <Text style={tw`flex-1 text-base font-bold text-slate-900`}>{explanation.disease}</Text>
         <View style={tw`rounded-full bg-teal-50 px-3 py-1`}>
-          {isPrimaryHealthcare ? <Text style={tw`text-[9px] font-semibold text-teal-700`}>Model confidence</Text> : null}
           <Text style={tw`text-xs font-bold text-teal-700`}>{Math.round(explanation.confidence * 100)}%</Text>
         </View>
       </View>
@@ -268,16 +258,14 @@ function DiseaseExplanation({ explanation, showClinicalDetails, isPrimaryHealthc
       ) : null}
       {displayedFeatures.length > 0 ? (
         <>
-      <Text style={tw`mt-4 text-xs font-bold leading-4 text-slate-600`}>{isPrimaryHealthcare ? "Why the model suggested this" : "Model factors"}</Text>
+      <Text style={tw`mt-4 text-xs font-bold leading-4 text-slate-600`}>{isPrimaryHealthcare ? "Why was this disease predicted?" : "Why predicted this"}</Text>
       <View style={tw`mt-4 gap-3`}>
         {displayedFeatures.map((item) => (
           <View key={`${item.feature}-${item.contribution}`}>
             <View style={tw`flex-row items-center justify-between`}>
               <Text style={tw`flex-1 text-sm font-semibold capitalize text-slate-700`}>{item.feature.replaceAll("_", " ")}</Text>
               <Text style={tw`text-xs font-bold ${item.direction === "supports" ? "text-emerald-700" : "text-rose-700"}`}>
-                {isPrimaryHealthcare
-                  ? item.direction === "supports" ? "Pushed toward match" : "Pushed away from match"
-                  : item.direction === "supports" ? "Supports" : "Opposes"}
+                {item.direction === "supports" ? "Supports" : "Opposes"}
               </Text>
             </View>
             <View style={tw`mt-1 h-2 overflow-hidden rounded-full bg-slate-100`}>
@@ -286,9 +274,6 @@ function DiseaseExplanation({ explanation, showClinicalDetails, isPrimaryHealthc
           </View>
         ))}
       </View>
-      {isPrimaryHealthcare ? (
-        <Text style={tw`mt-3 text-xs leading-5 text-slate-500`}>These recorded factors influenced the model, but do not confirm a disease. Bar lengths compare factors within this result; they are not measures of risk.</Text>
-      ) : null}
       </>
       ) : null}
     </View>
@@ -317,7 +302,7 @@ function TriageCard({ triage }: { triage: TriageRecommendation }) {
 
 function ResultPlaceholder({ icon, title, message, waitingLabel }: { icon: keyof typeof Ionicons.glyphMap; title: string; message: string; waitingLabel: string }) {
   return (
-    <View style={tw`mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm`}>
+    <View style={tw`mt-6 rounded-[20px] border border-[#E1ECE7] bg-white p-5 shadow-sm`}>
       <View style={tw`h-11 w-11 items-center justify-center rounded-xl bg-teal-50`}>
         <Ionicons name={icon} size={23} color="#0F766E" />
       </View>
@@ -342,7 +327,7 @@ function ResultCard({ icon, title, message, accent = "teal" }: { icon: keyof typ
         </View>
         <Text style={tw`ml-3 text-lg font-bold text-slate-900`}>{title}</Text>
       </View>
-      <Text style={tw`mt-4 text-sm leading-5 text-slate-600`}>{message}</Text>
+      {message ? <Text style={tw`mt-4 text-sm leading-5 text-slate-600`}>{message}</Text> : null}
     </View>
   );
 }

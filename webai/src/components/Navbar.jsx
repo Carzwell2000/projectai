@@ -1,6 +1,6 @@
-import { FiFileText, FiRefreshCw, FiUploadCloud } from 'react-icons/fi'
+import { FiRefreshCw, FiUploadCloud } from 'react-icons/fi'
 
-function Navbar({ pageTitle, notice, loading, onRefresh, syncStatus, syncError }) {
+function Navbar({ notice, loading, onRefresh, syncStatus, syncError, isClinicalWorkspace, isAdmin }) {
   const unsyncedCount = (syncStatus?.pending || 0) + (syncStatus?.conflicts || 0)
   const syncDetails = syncStatus
     ? `${syncStatus.pendingAssessments || 0} assessments, ${syncStatus.pendingPatients || 0} patients pending; ${syncStatus.conflicts || 0} conflicts across all nurses.${syncError ? ` ${syncError}` : ''}`
@@ -8,7 +8,11 @@ function Navbar({ pageTitle, notice, loading, onRefresh, syncStatus, syncError }
 
   return (
     <header className="topbar">
-      <div className="breadcrumb"><FiFileText aria-hidden="true" /><span></span><b>/</b><strong>{pageTitle}</strong></div>
+      <div className="topbar-brand-marquee" aria-label="Health Decision Support System">
+        <span className={`topbar-brand-track${isClinicalWorkspace || isAdmin ? ' is-static' : ''}`} aria-hidden="true">
+          {isAdmin ? 'CLINIC AI · ADMINISTRATION' : isClinicalWorkspace ? 'CLINIC AI · NURSING WORKSPACE' : 'HEALTH DECISION SUPPORT SYSTEM'}
+        </span>
+      </div>
       <div className="topbar-actions">
         {notice && <span className="connection-note" role="status">API unavailable</span>}
         {syncStatus && (

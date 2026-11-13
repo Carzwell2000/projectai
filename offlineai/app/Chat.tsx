@@ -34,21 +34,21 @@ export default function Chat() {
 	}, [loadNurses]));
 
 	return (
-		<SafeAreaView style={tw`flex-1 bg-slate-50`}>
+		<SafeAreaView style={tw`flex-1 bg-[#F3F7F5]`}>
 			<Stack.Screen options={{ headerShown: false }} />
 			<Navbar variant="hero" />
 			<View style={tw`flex-1 px-4 pb-5 pt-4`}>
 				<View style={tw`mb-4 flex-row items-center justify-between`}>
 					<View>
-						<Text style={tw`text-xs font-bold text-teal-700`}>TEAM COMMUNICATION</Text>
-						<Text style={tw`mt-1 text-2xl font-bold text-slate-900`}>Registered nurses</Text>
+						<Text style={tw`text-[10px] font-bold tracking-[1.5px] text-teal-700`}>TEAM COMMUNICATION</Text>
+						<Text style={tw`mt-1 text-2xl font-bold text-[#143B4F]`}>Registered nurses</Text>
 					</View>
 					<Pressable accessibilityLabel="Back to home" onPress={() => router.replace("/Home")} style={tw`h-10 w-10 items-center justify-center rounded-full bg-white`}>
 						<Ionicons name="arrow-back" size={20} color="#0F766E" />
 					</Pressable>
 				</View>
 
-				<View style={tw`flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white`}>
+				<View style={tw`flex-1 overflow-hidden rounded-[20px] border border-[#E1ECE7] bg-white shadow-sm`}>
 					{isLoading ? (
 						<ActivityIndicator style={tw`py-10`} color="#0F766E" />
 					) : error ? (
@@ -87,7 +87,7 @@ export default function Chat() {
 							<Pressable
 								accessibilityRole="button"
 								onPress={() => router.push({ pathname: "/ChatConversation", params: { nurseId: selectedNurse.id } })}
-								style={tw`flex-row items-center justify-center rounded-xl bg-teal-700 px-4 py-4`}
+								style={tw`flex-row items-center justify-center rounded-2xl bg-[#087C70] px-4 py-4`}
 							>
 								<Ionicons name="chatbubble-ellipses-outline" size={19} color="white" />
 								<Text style={tw`ml-2 font-bold text-white`}>Open chat with {selectedNurse.name}</Text>

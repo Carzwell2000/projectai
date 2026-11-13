@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { FiShield, FiTrash2, FiUserPlus, FiUsers } from 'react-icons/fi'
-import { ColumnDirective, ColumnsDirective, GridComponent, Inject, Page, Sort } from '@syncfusion/ej2-react-grids'
+import DataTable from '../components/DataTable'
 
 function NurseManagement({ nurses, loading, onCreate, onDelete }) {
   const [error, setError] = useState('')
@@ -23,7 +23,7 @@ function NurseManagement({ nurses, loading, onCreate, onDelete }) {
         role: form.get('role'),
       })
       formElement.reset()
-      setSuccess(`${form.get('role') === 'nurse' ? 'Nurse' : 'Primary healthcare'} account created.`)
+      setSuccess(`${form.get('role') === 'nurse' ? 'Nurse' : 'Village health worker'} account created.`)
     } catch (createError) {
       setError(createError.message)
     } finally {
@@ -45,17 +45,22 @@ function NurseManagement({ nurses, loading, onCreate, onDelete }) {
       setDeletingId('')
     }
   }
-  const nurseTemplate = (nurse) => (
-    <span className="table-person">
-      <span className="avatar avatar-small">{nurse.name?.slice(0, 1) || 'N'}</span>
-      <span><strong>{nurse.name}</strong><small>{nurse.email}</small></span>
-    </span>
-  )
-  const actionTemplate = (nurse) => (
-    <button className="icon-button admin-delete-button" type="button" onClick={() => handleDelete(nurse)} disabled={deletingId === nurse.id} aria-label={`Remove ${nurse.name}`} title="Remove nurse account">
-      <FiTrash2 aria-hidden="true" />
-    </button>
-  )
+  const columns = [
+    { key: 'name', label: 'Staff member', render: (nurse) => (
+      <span className="table-person">
+        <span className="avatar avatar-small">{nurse.name?.slice(0, 1) || 'N'}</span>
+        <span><strong>{nurse.name}</strong><small>{nurse.email}</small></span>
+      </span>
+    ) },
+    { key: 'role', label: 'Account type', render: (staff) => staff.role === 'primary_healthcare' ? 'Village health worker' : 'Nurse' },
+    { key: 'created_at', label: 'Created', render: (nurse) => nurse.created_at ? new Date(nurse.created_at).toLocaleDateString() : '—' },
+    { label: 'Access', sortable: false, render: () => <span className="sync-state is-synced">Active</span> },
+    { label: 'Actions', sortable: false, render: (nurse) => (
+      <button className="icon-button admin-delete-button" type="button" onClick={() => handleDelete(nurse)} disabled={deletingId === nurse.id} aria-label={`Remove ${nurse.name}`} title="Remove nurse account">
+        <FiTrash2 aria-hidden="true" />
+      </button>
+    ) },
+  ]
 
   return (
     <div className="page-stack">
@@ -71,7 +76,7 @@ function NurseManagement({ nurses, loading, onCreate, onDelete }) {
             <label className="field">Full name <span></span><input name="name" required minLength="2" maxLength="120" autoComplete="name" /></label>
             <label className="field admin-field-gap">Email <input name="email" type="email" required maxLength="200" autoComplete="email" /></label>
             <label className="field admin-field-gap"> Password <input name="password" type="password" required minLength="8" maxLength="200" autoComplete="new-password" /></label>
-            <label className="field admin-field-gap">Account type <select name="role" defaultValue="nurse"><option value="nurse">Nurse</option><option value="primary_healthcare">Primary healthcare worker</option></select></label>
+            <label className="field admin-field-gap">Account type <select name="role" defaultValue="nurse"><option value="nurse">Nurse</option><option value="primary_healthcare">Village health worker</option></select></label>
             {error && <p className="form-error" role="alert">{error}</p>}
             {success && <p className="form-success" role="status">{success}</p>}
             <button className="button button-primary admin-create-button" type="submit" disabled={pending}><FiUserPlus aria-hidden="true" />{pending ? 'Creating account…' : 'Create account'}</button>
@@ -81,24 +86,7 @@ function NurseManagement({ nurses, loading, onCreate, onDelete }) {
         <section className="section-block directory-block admin-nurse-directory">
           <div className="table-toolbar"><div><h2>Created Accounts</h2></div><span className="admin-directory-icon"><FiShield aria-hidden="true" /></span></div>
           {nurses.length ? (
-            <GridComponent
-              dataSource={nurses}
-              allowPaging
-              allowSorting
-              pageSettings={{ pageSize: 8, pageSizes: [5, 8, 15] }}
-              gridLines="Horizontal"
-              rowHeight={62}
-              cssClass="clinic-grid nurse-grid"
-            >
-              <ColumnsDirective>
-                <ColumnDirective field="name" headerText="Staff member" width="220" minWidth="170" template={nurseTemplate} />
-                <ColumnDirective field="role" headerText="Account type" width="190" template={(staff) => staff.role === 'primary_healthcare' ? 'Primary healthcare worker' : 'Nurse'} />
-                <ColumnDirective field="created_at" headerText="Created" width="140" template={(nurse) => nurse.created_at ? new Date(nurse.created_at).toLocaleDateString() : '—'} />
-                <ColumnDirective headerText="Access" width="120" template={() => <span className="sync-state is-synced">Active</span>} />
-                <ColumnDirective headerText="Actions" width="90" textAlign="Center" allowSorting={false} template={actionTemplate} />
-              </ColumnsDirective>
-              <Inject services={[Page, Sort]} />
-            </GridComponent>
+            <DataTable rows={nurses} columns={columns} pageSize={8} />
           ) : (
             <div className="empty-state admin-nurse-empty"><span className="empty-icon"><FiUsers aria-hidden="true" /></span><strong>{loading ? 'Loading staff accounts…' : 'No staff accounts yet'}</strong></div>
           )}

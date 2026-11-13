@@ -73,6 +73,10 @@ export async function getAdminAnalytics(token) {
   return apiRequest('/api/auth/admin/analytics', token)
 }
 
+export async function listAdminAssessments(token) {
+  return apiRequest('/api/auth/admin/assessments', token)
+}
+
 export async function listNurses(token) {
   return apiRequest('/api/auth/nurses', token)
 }

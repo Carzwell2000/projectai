@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { AccessibilityInfo, Animated, Easing, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { AccessibilityInfo, Animated, Easing, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import tw from "twrnc";
@@ -20,9 +20,9 @@ const PORTALS: {
 }[] = [
   {
     role: "primary_healthcare",
-    title: "Primary Healthcare",
+    title: "Village Health Worker",
     description: "Access patient assessments and supported results.",
-    button: "Enter Primary Healthcare Portal",
+    button: "Enter Village Health Worker Portal",
   },
   {
     role: "nurse",
@@ -40,6 +40,7 @@ const PORTALS: {
 
 export default function Login() {
   const router = useRouter();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const login = useAuthStore((state) => state.login);
   const [hasExplored, setHasExplored] = useState(false);
   const [selectedPortal, setSelectedPortal] = useState<PortalRole | null>(null);
@@ -52,6 +53,8 @@ export default function Login() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isPortalAccessError = message.startsWith("This account does not have access");
   const headlineAnimations = useRef([new Animated.Value(0), new Animated.Value(0), new Animated.Value(0)]).current;
+  const portalCardHeight = Math.min(250, windowWidth - 32, Math.max(96, (windowHeight - 260) / 3));
+  const portalCardWidth = Math.min(420, windowWidth - 32);
 
   useEffect(() => {
     let isActive = true;
@@ -125,7 +128,9 @@ export default function Login() {
         <ScrollView
           keyboardShouldPersistTaps="handled"
           style={tw`flex-1`}
-          contentContainerStyle={hasExplored ? tw`pb-8` : tw`flex-grow`}
+          contentContainerStyle={hasExplored
+            ? [tw`flex-grow`, !selectedPortal ? { minHeight: windowHeight } : tw`pb-8`]
+            : tw`flex-grow`}
         >
           {!hasExplored ? (
             <View style={tw`relative flex-1 justify-between px-5 py-6`}>
@@ -180,65 +185,89 @@ export default function Login() {
               </Pressable>
             </View>
           ) : !selectedPortal ? (
-            <View style={tw`flex-1 bg-[#F5F8F6] px-5 pb-8 pt-7`}>
-              <View style={tw`flex-row items-center rounded-2xl border border-[#E1ECE6] bg-[#F0F8F3] p-3`}>
-                <View style={tw`h-11 w-11 items-center justify-center rounded-xl border border-[#CFE3D8] bg-white`}>
-                  <Ionicons name="pulse" size={21} color="#167663" />
+            <View style={[tw`relative flex-1 overflow-hidden bg-[#102D2B]`, { minHeight: windowHeight }]}>
+              <Image
+                source={require("../assets/images/doctor.jpg")}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                contentPosition="center"
+                transition={250}
+                accessibilityLabel="Healthcare professional with a patient"
+              />
+              <LinearGradient
+                colors={["rgba(10,23,21,0.68)", "rgba(10,23,21,0.52)", "rgba(10,23,21,0.72)"]}
+                style={StyleSheet.absoluteFill}
+              />
+              <View style={tw`flex-1 justify-center py-1`}>
+                <View style={tw`items-center px-5`}>
+                  <View style={tw`flex-row items-center rounded-full border border-white/20 bg-[#102D2B]/75 py-2 pl-2.5 pr-4`}>
+                    <View style={tw`h-9 w-9 items-center justify-center rounded-full bg-[#E3F3EB]`}>
+                      <Ionicons name="pulse" size={20} color="#167663" />
+                    </View>
+                    <Text style={tw`ml-2.5 text-[10px] font-extrabold tracking-[1.5px] text-white`}>HEALTH DECISION SUPPORT</Text>
+                  </View>
+                  <Text
+                    accessibilityRole="header"
+                    style={tw`mt-2 text-center text-3xl font-bold leading-10 text-white`}
+                  >
+                    Choose your workspace
+                  </Text>
+                  <Text style={tw`mt-2 max-w-[500px] text-center text-sm leading-5 text-white/90`}>
+                    Select the role linked to your account to continue securely.
+                  </Text>
                 </View>
-                <Text style={tw`ml-3 text-[10px] font-bold tracking-widest text-[#537565]`}>CLINICAL WORKSPACE</Text>
-              </View>
 
-              <Text accessibilityRole="header" style={tw`mt-6 text-3xl font-bold leading-9 text-[#18312C]`}>
-                Choose your workspace
-              </Text>
-              <Text style={tw`mb-5 mt-2 text-sm leading-5 text-slate-500`}>
-                Select the role linked to your account to continue securely.
-              </Text>
+                {message ? (
+                  <Text accessibilityRole="alert" style={tw`mx-5 mt-4 text-center text-sm font-semibold text-rose-100`}>{message}</Text>
+                ) : null}
 
-              {PORTALS.map((portal) => (
-                <Pressable
-                  key={portal.role}
-                  accessibilityRole="button"
-                  accessibilityLabel={portal.button}
-                  onPress={() => {
-                    setSelectedPortal(portal.role);
-                    setMessage("");
-                  }}
-                  style={({ pressed }) => [
-                    tw`mb-3 rounded-2xl border border-[#E0E9E4] bg-white p-4 shadow-sm`,
-                    pressed && tw`border-[#8DBBA7] opacity-90`,
-                  ]}
-                >
-                  <View style={tw`flex-row items-center`}>
-                    <View style={tw`h-[76px] w-[84px] overflow-hidden rounded-xl`}>
-                      <PortalIllustration role={portal.role} />
-                    </View>
-                    <View style={tw`ml-4 flex-1`}>
-                      <Text style={tw`text-sm font-bold text-[#263B33]`}>{portal.title}</Text>
-                      <Text style={tw`mt-1 text-xs leading-5 text-slate-500`}>{portal.description}</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={19} color="#809087" />
+                <View style={[tw`items-center`, { gap: 3, marginHorizontal: 16, marginTop: 6, marginBottom: 0 }]}>
+                  {PORTALS.map((portal) => (
+                    <Pressable
+                      key={portal.role}
+                      accessibilityRole="button"
+                      accessibilityLabel={portal.button}
+                      onPress={() => {
+                        setSelectedPortal(portal.role);
+                        setMessage("");
+                      }}
+                      style={({ pressed }) => [
+                        tw`items-center justify-center overflow-hidden rounded-2xl border border-white/80 bg-[#F6FAF7]/95 p-2.5`,
+                        { width: portalCardWidth, height: portalCardHeight, borderTopWidth: 4, borderTopColor: "#79B99A" },
+                        pressed && tw`opacity-90`,
+                      ]}
+                    >
+                      <View style={tw`h-20 w-24 overflow-hidden rounded-xl`}>
+                        <PortalIllustration role={portal.role} />
+                      </View>
+                      <Text style={tw`mt-3 text-center text-lg font-bold text-[#263B33]`}>{portal.title}</Text>
+                      <Text numberOfLines={2} style={tw`mt-2 text-center text-xs leading-5 text-[#687B72]`}>
+                        {portal.description}
+                      </Text>
+                      <View style={tw`mt-4 min-h-10 w-full flex-row items-center justify-center rounded-lg bg-[#167663] px-3`}>
+                        <Text style={tw`mr-1 text-center text-xs font-bold text-white`}>
+                          Enter
+                        </Text>
+                        <Ionicons name="arrow-forward" size={16} color="white" />
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <View style={tw`items-center px-5`}>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => setHasExplored(false)}
+                    style={tw`self-start flex-row items-center rounded-full px-2 py-2`}
+                  >
+                    <Ionicons name="chevron-back" size={15} color="white" />
+                    <Text style={tw`ml-1 text-xs font-bold text-white`}>Back to explore</Text>
+                  </Pressable>
+                  <View style={tw`mt-3 flex-row items-center`}>
+                    <Ionicons name="shield-outline" size={15} color="#D8F2E9" />
+                    <Text style={tw`ml-2 text-[11px] text-white/90`}>Secure access for authorized clinical staff</Text>
                   </View>
-                  <View style={tw`mt-3 min-h-9 flex-row items-center justify-between rounded-lg bg-[#F2F7F4] px-3`}>
-                    <Text style={tw`text-xs font-bold text-[#326754]`}>Continue as {portal.title}</Text>
-                    <Ionicons name="arrow-forward" size={15} color="#326754" />
-                  </View>
-                </Pressable>
-              ))}
-
-              {message ? (
-                <Text accessibilityRole="alert" style={tw`mb-2 text-sm text-rose-700`}>{message}</Text>
-              ) : null}
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setHasExplored(false)}
-                style={tw`mt-1 self-center rounded-full px-4 py-2`}
-              >
-                <Text style={tw`text-xs font-semibold text-teal-700`}>Back to explore</Text>
-              </Pressable>
-              <View style={tw`mt-2 flex-row items-center justify-center`}>
-                <Ionicons name="shield-checkmark-outline" size={14} color="#59816E" />
-                <Text style={tw`ml-2 text-[10px] text-slate-500`}>Secure access for authorized clinical staff</Text>
+                </View>
               </View>
             </View>
           ) : (

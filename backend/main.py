@@ -278,7 +278,7 @@ def for_staff_role(response: dict[str, Any], role: str) -> dict[str, Any]:
         return response
 
     visible_response = response.copy()
-    for key in ("recommendation", "triage", "clinicalSignals"):
+    for key in ("recommendation", "clinicalSignals"):
         visible_response.pop(key, None)
     if "predictedDiseases" in visible_response:
         visible_response["predictedDiseases"] = [
@@ -494,7 +494,7 @@ def explain_assessment(symptoms: str, temperature: float, blood_pressure: str = 
     recommendations = artifact.get("recommendations", {})
     predicted_diseases = []
     if has_sufficient_evidence:
-        for index in np.argsort(probabilities)[::-1][:5]:
+        for index in np.argsort(probabilities)[::-1]:
             disease_features = features_for(contributions_for(int(index)))
             # Temperature can inform triage, but it cannot by itself support a
             # disease label. Require a positive contribution from a reported,
@@ -514,6 +514,8 @@ def explain_assessment(symptoms: str, temperature: float, blood_pressure: str = 
                 ),
                 "features": disease_features,
             })
+            if len(predicted_diseases) == 5:
+                break
     feature_contributions = predicted_diseases[0]["features"] if predicted_diseases else []
 
     pressure_match = re.fullmatch(r"\s*(\d{2,3})\s*/\s*(\d{2,3})\s*", blood_pressure)

@@ -17,7 +17,7 @@ export default function RegisterPatientScreen() {
   };
 
   return (
-    <SafeAreaView style={tw`flex-1 bg-slate-50`}>
+    <SafeAreaView style={tw`flex-1 bg-[#F3F7F5]`}>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={tw`px-5`}>
         <Navbar variant="hero" />

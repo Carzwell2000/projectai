@@ -9,7 +9,7 @@ import {
 } from 'react-icons/fi'
 import Navbar from './components/Navbar'
 import Sidebar from './components/Sidebar'
-import { apiRequest, getSyncStatus, runSync } from './api'
+import { apiRequest, getSyncStatus, listAdminAssessments, runSync } from './api'
 import {
   AdminDashboard,
   Asses,
@@ -27,6 +27,16 @@ import {
   ForgotPassword,
 } from './pages'
 
+const EMPTY_ASSESSMENT_DRAFT = {
+  patientId: '',
+  age: '',
+  gender: '',
+  pregnant: '',
+  temperature: '',
+  bloodPressure: '',
+  symptoms: '',
+}
+
 async function fetchWorkspace(token) {
   const [patientData, assessmentData] = await Promise.all([
     apiRequest('/api/patients', token),
@@ -39,11 +49,12 @@ async function fetchWorkspace(token) {
 }
 
 async function fetchAdminWorkspace(token) {
-  const [analytics, nurses] = await Promise.all([
+  const [analytics, nurses, assessmentData] = await Promise.all([
     apiRequest('/api/auth/admin/analytics', token),
     apiRequest('/api/auth/nurses', token),
+    listAdminAssessments(token),
   ])
-  return { analytics, nurses }
+  return { analytics, nurses, assessments: assessmentData.assessments || [] }
 }
 
 function readSession() {
@@ -86,8 +97,10 @@ function App() {
   const [assessments, setAssessments] = useState([])
   const [adminAnalytics, setAdminAnalytics] = useState(null)
   const [nurseAccounts, setNurseAccounts] = useState([])
+  const [adminAssessments, setAdminAssessments] = useState([])
   const [editingPatient, setEditingPatient] = useState(null)
   const [assessmentResult, setAssessmentResult] = useState(null)
+  const [assessmentDraft, setAssessmentDraft] = useState(EMPTY_ASSESSMENT_DRAFT)
   const [assessmentExplanation, setAssessmentExplanation] = useState(null)
   const [assessmentExplanationPending, setAssessmentExplanationPending] = useState(false)
   const [assessmentExplanationError, setAssessmentExplanationError] = useState('')
@@ -128,6 +141,7 @@ function App() {
         const workspaceData = await fetchAdminWorkspace(token)
         setAdminAnalytics(workspaceData.analytics)
         setNurseAccounts(workspaceData.nurses)
+        setAdminAssessments(workspaceData.assessments)
       } else {
         const workspaceData = await fetchWorkspace(token)
         setPatients(workspaceData.patients)
@@ -155,6 +169,7 @@ function App() {
         if (isAdmin) {
           setAdminAnalytics(workspaceData.analytics)
           setNurseAccounts(workspaceData.nurses)
+          setAdminAssessments(workspaceData.assessments)
         } else {
           setPatients(workspaceData.patients)
           setAssessments(workspaceData.assessments)
@@ -203,6 +218,7 @@ function App() {
           if (!active) return
           setAdminAnalytics(workspaceData.analytics)
           setNurseAccounts(workspaceData.nurses)
+          setAdminAssessments(workspaceData.assessments)
         } else {
           const workspaceData = await fetchWorkspace(token)
           if (!active) return
@@ -249,7 +265,9 @@ function App() {
     setAssessments([])
     setAdminAnalytics(null)
     setNurseAccounts([])
+    setAdminAssessments([])
     setAssessmentResult(null)
+    setAssessmentDraft(EMPTY_ASSESSMENT_DRAFT)
     setAssessmentExplanation(null)
     setSyncStatus(null)
     setView('dashboard')
@@ -356,6 +374,9 @@ function App() {
     if (view === 'more') {
       return <More isAdmin={isAdmin} onNavigate={setView} />
     }
+    if (view === 'admin-assessments' && isAdmin) {
+      return <Assesmentrecords assessments={adminAssessments} loading={loading} isAdmin />
+    }
     if (view === 'messages' && !isAdmin) {
       return <Messages session={session} onBack={() => setView('more')} />
     }
@@ -373,7 +394,15 @@ function App() {
       return <AdminDashboard analytics={adminAnalytics} loading={loading} onNavigate={setView} />
     }
     if (view === 'assessment') {
-      return <Asses patients={patients} onSubmit={handleAssessmentSubmit} onComplete={handleAssessmentComplete} />
+      return (
+        <Asses
+          patients={patients}
+          draft={assessmentDraft}
+          onDraftChange={(updates) => setAssessmentDraft((current) => ({ ...current, ...updates }))}
+          onSubmit={handleAssessmentSubmit}
+          onComplete={handleAssessmentComplete}
+        />
+      )
     }
     if (view === 'assessment-results' && assessmentResult) {
       return (
@@ -415,21 +444,15 @@ function App() {
         patients={patients}
         loading={loading}
         onNavigate={setView}
-        onRefresh={refreshWorkspace}
+        onRefresh={() => { refreshWorkspace(); refreshSyncStatus() }}
         nurseId={session?.nurse?.id}
         isPrimaryHealthcare={session?.nurse?.role === 'primary_healthcare'}
+        syncStatus={syncStatus}
       />
     )
   }
 
   const activeNavigation = view === 'register' ? 'patients' : view === 'assessment-results' ? 'assessment' : view
-  const pageTitle = view === 'assessment-results' ? 'Assessment result' : view === 'register'
-    ? editingPatient ? 'Edit patient' : 'Register patient'
-    : view === 'settings' ? 'Settings'
-      : view === 'analysis' ? 'Symptom analysis'
-        : view === 'messages' ? 'Team messages'
-          : view === 'more' ? 'More'
-            : navigation.find((item) => item.id === view)?.label || 'Overview'
 
   return (
     <div className="workspace">
@@ -444,12 +467,13 @@ function App() {
 
       <div className="workspace-main">
         <Navbar
-          pageTitle={pageTitle}
           notice={notice}
           loading={loading}
           onRefresh={() => { refreshWorkspace(); refreshSyncStatus() }}
           syncStatus={isAdmin ? null : syncStatus}
           syncError={isAdmin ? '' : syncError}
+          isClinicalWorkspace={!isAdmin}
+          isAdmin={isAdmin}
         />
         {notice && <div className="notice-bar" role="alert">{notice}</div>}
         <main className="page-content">{renderPage()}</main>

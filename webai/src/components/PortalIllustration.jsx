@@ -1,4 +1,4 @@
-import primaryHealthWorkerImage from '../assets/primary-health-worker.png'
+import villageHealthWorkerImage from '../assets/village-health-worker.png'
 import nursingStaffImage from '../assets/nursing-staff.png'
 
 function PortalIllustration({ role }) {
@@ -8,7 +8,7 @@ function PortalIllustration({ role }) {
 	const clothing = isNurse ? '#258b78' : '#284d5a'
 
 	if (isDoctor) {
-		return <img className="portal-illustration portal-illustration-photo" src={primaryHealthWorkerImage} alt="Primary healthcare worker" />
+		return <img className="portal-illustration portal-illustration-photo" src={villageHealthWorkerImage} alt="Village health worker" />
 	}
 	if (isNurse) {
 		return <img className="portal-illustration portal-illustration-photo" src={nursingStaffImage} alt="Nurse caring for an older patient" />

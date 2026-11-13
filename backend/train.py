@@ -1066,7 +1066,7 @@ model_artifact = {
     "number_to_disease": number_to_disease,
     "all_symptoms": all_symptoms,
     "temperature_feature": "patient_temperature",
-    "model_version": "logistic-single-symptom-2",
+    "model_version": "logistic-single-symptom-7",
     "single_symptom_cases": single_symptom_cases,
 }
 

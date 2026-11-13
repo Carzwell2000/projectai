@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Modal, Pressable, Text, View } from "react-native";
@@ -44,75 +45,95 @@ export default function Navbar({ variant = "default", monitorSync = true, showSy
 	return (
 		<>
 			{variant === "hero" ? (
-				<View style={tw`bg-[#102D2B] px-5 pb-8 pt-2`}>
-					{showSyncStatus ? (
-						<View style={tw`mb-6 flex-row items-center rounded-2xl bg-[#EAF5EF] px-4 py-3`}>
-							<View style={tw`h-7 w-7 items-center justify-center rounded-full bg-white`}>
-								<Ionicons name={isConnected ? "cloud-done-outline" : "cloud-offline-outline"} size={17} color="#1671B8" />
+				<LinearGradient
+					colors={["#075B51", "#06463F", "#063C39"]}
+					start={{ x: 0, y: 0 }}
+					end={{ x: 1, y: 1 }}
+					style={tw`overflow-hidden rounded-b-[26px] px-5 pb-6 pt-3`}
+				>
+					<View style={tw`mb-5 flex-row items-center justify-between`}>
+						<View style={tw`flex-row items-center`}>
+							<View style={tw`h-10 w-10 items-center justify-center rounded-2xl border border-white/25 bg-white/10`}>
+								<Ionicons name="pulse" size={23} color="#A8F5DF" />
 							</View>
-							<View style={tw`ml-3 flex-1`}>
-								<Text style={tw`text-xs font-bold text-slate-800`}>
-									{!isConnected
-										? isOnline ? "Cloud sync is not configured" : "API unavailable"
-										: unsyncedRecordCount > 0
-											? `${unsyncedRecordCount} unsynced item${unsyncedRecordCount === 1 ? "" : "s"}`
-											: isSyncing
-												? "Syncing records..."
-													: "All records synced"}
-								</Text>
-								<Text style={tw`mt-1 text-xs font-medium text-slate-700`} numberOfLines={3}>
-									{isConnected
-										? `${pendingAssessments} assessments · ${pendingPatients} patients`
-										: ""}
-								</Text>
+							<View style={tw`ml-3`}>
+								<Text style={tw`text-base font-extrabold tracking-wide text-white`}>Clinic AI</Text>
+								<Text style={tw`mt-0.5 text-[10px] font-medium text-emerald-100`}>Healthier community</Text>
 							</View>
-						</View>
-					) : null}
-					<View style={tw`flex-row items-start justify-between`}>
-						<View>
-							<Text style={tw`text-4xl font-bold text-white`}>AI Health</Text>
-							<Text style={tw`mt-1 text-2xl font-medium text-white`}>Decision Support System</Text>
-							<Text style={tw`mt-2 text-2xl font-semibold text-white`}> Hello {nurseName ?? "Nurse"}</Text>
 						</View>
 						<Pressable
 							accessibilityLabel="Open menu"
 							accessibilityRole="button"
 							onPress={() => setIsMenuOpen(true)}
-							style={({ pressed }) => [tw`h-12 w-12 items-center justify-center rounded-2xl bg-white/10`, pressed && tw`opacity-70`]}
+							style={({ pressed }) => [tw`h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-white/10`, pressed && tw`opacity-70`]}
 						>
-							<Ionicons name="menu-outline" size={28} color="white" />
+							<Ionicons name="menu-outline" size={24} color="white" />
 						</Pressable>
 					</View>
-				</View>
+					<View style={tw`flex-row items-end justify-between`}>
+						<View style={tw`flex-1 pr-3`}>
+							<Text style={tw`text-[10px] font-bold tracking-[1.7px] text-emerald-200`}>CLINICAL WORKSPACE</Text>
+							<Text style={tw`mt-1 text-2xl font-bold text-white`}>Hello, {nurseName ?? "Nurse"}</Text>
+							<Text style={tw`mt-1 text-xs leading-5 text-emerald-50`}>Patient care, supported by clinical insight.</Text>
+						</View>
+						<View style={tw`h-11 w-11 items-center justify-center rounded-full border-2 border-emerald-100/70 bg-white/10`}>
+							<Text style={tw`text-base font-bold uppercase text-white`}>{nurseName?.slice(0, 1) ?? "N"}</Text>
+						</View>
+					</View>
+					{showSyncStatus ? (
+						<View style={tw`mt-5 flex-row items-center rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5`}>
+							<View style={tw`h-8 w-8 items-center justify-center rounded-xl bg-white/10`}>
+								<Ionicons name={isConnected ? "cloud-done-outline" : "cloud-offline-outline"} size={17} color={isConnected ? "#9BF2D3" : "#FFD49D"} />
+							</View>
+							<View style={tw`ml-2.5 flex-1`}>
+								<Text style={tw`text-xs font-bold text-white`}>
+									{!isConnected
+										? isOnline ? "Cloud sync is not configured" : "API unavailable"
+										: unsyncedRecordCount > 0
+											? `${unsyncedRecordCount} item${unsyncedRecordCount === 1 ? "" : "s"} awaiting sync`
+											: isSyncing
+												? "Syncing records..."
+												: "All records synced"}
+								</Text>
+								{isConnected ? (
+									<Text style={tw`mt-0.5 text-[10px] font-medium text-emerald-100`} numberOfLines={1}>
+										{pendingAssessments} assessments · {pendingPatients} patients
+									</Text>
+								) : null}
+							</View>
+							<View style={tw`ml-2 h-2 w-2 rounded-full ${isConnected ? "bg-emerald-300" : "bg-amber-300"}`} />
+						</View>
+					) : null}
+				</LinearGradient>
 			) : (
-			<View style={tw`flex-row items-center justify-between border-b border-slate-100 pt-3 pb-5`}>
+			<View style={tw`flex-row items-center justify-between border-b border-[#E2ECE7] bg-[#F3F7F5] pt-3 pb-4`}>
 				<View>
 					<View style={tw`flex-row items-center`}>
-						<View style={tw`mr-2 h-7 w-7 items-center justify-center rounded-lg bg-teal-700`}><Ionicons name="pulse" size={16} color="white" /></View>
-						<Text style={tw`text-sm font-extrabold tracking-widest text-slate-900`}>AI HEALTH</Text>
+						<View style={tw`mr-2 h-8 w-8 items-center justify-center rounded-xl bg-[#075B51]`}><Ionicons name="pulse" size={17} color="#A8F5DF" /></View>
+						<Text style={tw`text-sm font-extrabold tracking-widest text-[#143B4F]`}>CLINIC AI</Text>
 					</View>
-					<Text style={tw`mt-1 text-xs font-medium text-slate-500`}>{nurseName ?? "Nurse"} · Primary care decision support</Text>
+					<Text style={tw`mt-1 text-xs font-medium text-slate-500`}>{nurseName ?? "Nurse"} · Clinical workspace</Text>
 				</View>
 				<Pressable
 					accessibilityLabel="Open menu"
 					accessibilityRole="button"
 					onPress={() => setIsMenuOpen(true)}
 					style={({ pressed }) => [
-						tw`h-11 w-11 items-center justify-center rounded-2xl border border-teal-100 bg-teal-50`,
+						tw`h-10 w-10 items-center justify-center rounded-xl border border-[#D7ECE4] bg-white`,
 						pressed && tw`opacity-70`,
 					]}
 				>
-					<Ionicons name="menu-outline" size={24} color="#0F766E" />
+					<Ionicons name="menu-outline" size={22} color="#075B51" />
 				</Pressable>
 			</View>
 			)}
 
 			<Modal animationType="fade" transparent visible={isMenuOpen} onRequestClose={() => setIsMenuOpen(false)}>
 				<Pressable style={tw`flex-1 bg-slate-900/30`} onPress={() => setIsMenuOpen(false)}>
-					<Pressable style={tw`absolute right-5 top-16 w-72 rounded-2xl border border-slate-100 bg-white p-3 shadow-lg`} onPress={(event) => event.stopPropagation()}>
+					<Pressable style={tw`absolute right-5 top-16 w-72 overflow-hidden rounded-2xl border border-[#E2ECE7] bg-white p-3 shadow-lg`} onPress={(event) => event.stopPropagation()}>
 						<View style={tw`border-b border-slate-100 px-3 pb-3`}>
-							<Text style={tw`text-lg font-bold text-slate-900`}>Menu</Text>
-							<Text style={tw`mt-1 text-xs text-slate-500`}></Text>
+							<Text style={tw`text-lg font-bold text-[#143B4F]`}>Workspace menu</Text>
+							<Text style={tw`mt-1 text-xs text-slate-500`}>Quick links and account</Text>
 						</View>
 			
 						<MenuItem icon="person-outline" label="Registered patients" onPress={() => openScreen("/RegisteredPatients")} />

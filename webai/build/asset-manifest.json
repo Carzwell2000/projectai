@@ -1,16 +1,18 @@
 {
   "files": {
-    "main.css": "/static/css/main.055c2580.css",
-    "main.js": "/static/js/main.5b39c620.js",
-    "static/media/primary-health-worker.png": "/static/media/primary-health-worker.6ac03c3af78d81f92104.png",
-    "static/media/nursing-staff.png": "/static/media/nursing-staff.a256a9b7fa66ab078830.png",
+    "main.css": "/static/css/main.1e5b8737.css",
+    "main.js": "/static/js/main.5db19c54.js",
+    "static/js/223.cd266095.chunk.js": "/static/js/223.cd266095.chunk.js",
+    "static/media/village-health-worker.png": "/static/media/village-health-worker.6ac03c3af78d81f92104.png",
+    "static/media/navbar-doctor.png": "/static/media/navbar-doctor.6a2afa631d2ea5b5846d.png",
     "static/media/doctor.jpg": "/static/media/doctor.21b261fd094155ca21c7.jpg",
     "index.html": "/index.html",
-    "main.055c2580.css.map": "/static/css/main.055c2580.css.map",
-    "main.5b39c620.js.map": "/static/js/main.5b39c620.js.map"
+    "main.1e5b8737.css.map": "/static/css/main.1e5b8737.css.map",
+    "main.5db19c54.js.map": "/static/js/main.5db19c54.js.map",
+    "223.cd266095.chunk.js.map": "/static/js/223.cd266095.chunk.js.map"
   },
   "entrypoints": [
-    "static/css/main.055c2580.css",
-    "static/js/main.5b39c620.js"
+    "static/css/main.1e5b8737.css",
+    "static/js/main.5db19c54.js"
   ]
 }

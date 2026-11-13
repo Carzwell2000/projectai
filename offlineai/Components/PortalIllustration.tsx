@@ -13,11 +13,11 @@ export default function PortalIllustration({ role }: PortalIllustrationProps) {
   if (isDoctor) {
     return (
       <Image
-        source={require("../assets/images/primary-health-worker.png")}
+        source={require("../assets/images/village-health-worker.png")}
         style={{ width: "100%", height: "100%" }}
         contentFit="cover"
         contentPosition="center"
-        accessibilityLabel="Primary healthcare worker"
+        accessibilityLabel="Village health worker"
       />
     );
   }

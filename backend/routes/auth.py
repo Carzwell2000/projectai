@@ -6,10 +6,13 @@ import secrets
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from io import BytesIO
+from typing import Any, Literal
 from uuid import uuid4
+from xml.sax.saxutils import escape
+from zipfile import ZIP_DEFLATED, ZipFile
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 
@@ -325,9 +328,14 @@ def admin_analytics(_: dict[str, str] = Depends(get_current_admin)) -> dict[str,
 
     with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
         nurse_names = dict(connection.execute(
-            "SELECT id, name FROM nurses WHERE role = 'nurse'"
+            "SELECT id, name FROM nurses WHERE role IN ('nurse', 'primary_healthcare')"
         ).fetchall())
-        total_nurses = len(nurse_names)
+        total_nurses = connection.execute(
+            "SELECT COUNT(*) FROM nurses WHERE role = 'nurse'"
+        ).fetchone()[0]
+        staff_roles = dict(connection.execute(
+            "SELECT id, role FROM nurses WHERE role IN ('nurse', 'primary_healthcare')"
+        ).fetchall())
         nurse_daily_rows = connection.execute(
             """
             SELECT date(created_at), COUNT(*)
@@ -342,9 +350,16 @@ def admin_analytics(_: dict[str, str] = Depends(get_current_admin)) -> dict[str,
     patient_daily_counts = {day: count for day, count in patient_daily_rows if day}
     nurse_daily_counts = {day: count for day, count in nurse_daily_rows if day}
     nurse_assessment_counts: dict[str, int] = {}
+    assessment_usage_by_role = {
+        "nurse": 0,
+        "primary_healthcare": 0,
+    }
     for nurse_id, count in nurse_rows:
         label = nurse_names.get(nurse_id, "Unassigned")
         nurse_assessment_counts[label] = nurse_assessment_counts.get(label, 0) + count
+        role = staff_roles.get(nurse_id)
+        if role in assessment_usage_by_role:
+            assessment_usage_by_role[role] += count
     return {
         "totals": {
             "assessments": total_assessments,
@@ -381,8 +396,206 @@ def admin_analytics(_: dict[str, str] = Depends(get_current_admin)) -> dict[str,
             {"label": name, "value": count}
             for name, count in sorted(nurse_assessment_counts.items(), key=lambda item: item[1], reverse=True)[:10]
         ],
+        "assessmentUsageByRole": [
+            {"label": "Nurses", "role": "nurse", "value": assessment_usage_by_role["nurse"]},
+            {
+                "label": "Village health workers",
+                "role": "primary_healthcare",
+                "value": assessment_usage_by_role["primary_healthcare"],
+            },
+        ],
         "topDiseases": [{"label": disease, "value": count} for disease, count in disease_rows],
     }
+
+
+@router.get("/admin/assessments")
+def admin_assessments(_: dict[str, str] = Depends(get_current_admin)) -> dict[str, Any]:
+    ensure_local_schema()
+    ensure_auth_schema()
+    with sqlite3.connect(LOCAL_DATABASE_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            "SELECT * FROM assessments ORDER BY created_at DESC"
+        ).fetchall()
+    with sqlite3.connect(AUTH_DATABASE_PATH) as connection:
+        staff = {
+            nurse_id: {"name": name, "role": role}
+            for nurse_id, name, role in connection.execute(
+                "SELECT id, name, role FROM nurses"
+            ).fetchall()
+        }
+
+    assessments = []
+    for row in rows:
+        assessment = dict(row)
+        if isinstance(assessment["predictions"], str):
+            assessment["predictions"] = json.loads(assessment["predictions"])
+        staff_record = staff.get(row["nurse_id"])
+        assessment["nurse_name"] = staff_record["name"] if staff_record else "Unknown nurse"
+        assessment["staff_role"] = staff_record["role"] if staff_record else None
+        assessments.append(assessment)
+    return {"count": len(assessments), "assessments": assessments}
+
+
+@router.get("/admin/assessments/export")
+def export_admin_assessments(
+    admin: dict[str, str] = Depends(get_current_admin),
+    staff_role: Literal["nurse", "primary_healthcare"] | None = None,
+) -> Response:
+    assessments = admin_assessments(admin)
+    if staff_role is not None:
+        assessments["assessments"] = [
+            assessment for assessment in assessments["assessments"]
+            if assessment.get("staff_role") == staff_role
+        ]
+    headers = [
+        "Patient",
+        "Assessment date",
+        "Age",
+        "Gender",
+        "Pregnancy",
+        "Temperature (°C)",
+        "Blood pressure",
+        "Symptoms",
+        "Result",
+        "Confidence",
+        "Assessed by",
+        "Sync status",
+    ]
+    if staff_role != "primary_healthcare":
+        headers.insert(10, "Recommendation")
+    rows = [headers]
+    for assessment in assessments["assessments"]:
+        pregnant = assessment.get("pregnant")
+        pregnancy = "Yes" if pregnant in (True, 1) else "No" if pregnant in (False, 0) else "Not applicable"
+        row = [
+            assessment.get("patient_name") or "Patient record",
+            assessment.get("created_at") or "",
+            assessment.get("age"),
+            assessment.get("gender") or "",
+            pregnancy,
+            assessment.get("temperature"),
+            assessment.get("blood_pressure") or "",
+            assessment.get("symptoms") or "",
+            assessment.get("disease") or "Review recommended",
+            assessment.get("confidence"),
+        ]
+        if staff_role != "primary_healthcare":
+            row.append(assessment.get("recommendation") or "")
+        row.extend(
+            [
+                assessment.get("nurse_name") or "Unknown nurse",
+                assessment.get("sync_status") or "",
+            ]
+        )
+        rows.append(row)
+
+    def column_letter(number: int) -> str:
+        letters = ""
+        while number:
+            number, remainder = divmod(number - 1, 26)
+            letters = chr(65 + remainder) + letters
+        return letters
+
+    def cell_xml(reference: str, value: Any, style: int = 0) -> str:
+        style_attribute = f' s="{style}"' if style else ""
+        if value is None:
+            return f'<c r="{reference}"{style_attribute}/>'
+        if isinstance(value, bool):
+            value = int(value)
+        if isinstance(value, (int, float)):
+            return f'<c r="{reference}"{style_attribute}><v>{value}</v></c>'
+        text = escape(str(value))
+        preserve = ' xml:space="preserve"' if text != text.strip() else ""
+        return f'<c r="{reference}" t="inlineStr"{style_attribute}><is><t{preserve}>{text}</t></is></c>'
+
+    xml_rows = []
+    for row_number, row in enumerate(rows, start=1):
+        cells = []
+        for column_number, value in enumerate(row, start=1):
+            confidence_column = 10
+            style = 1 if row_number == 1 else 2 if column_number == confidence_column and isinstance(value, (int, float)) else 0
+            cells.append(cell_xml(f"{column_letter(column_number)}{row_number}", value, style))
+        xml_rows.append(f'<row r="{row_number}">{"".join(cells)}</row>')
+
+    widths = (26, 23, 10, 18, 18, 19, 18, 48, 30, 15)
+    if staff_role != "primary_healthcare":
+        widths += (48,)
+    widths += (26, 18)
+    xml_columns = "".join(
+        f'<col min="{index}" max="{index}" width="{width}" customWidth="1"/>'
+        for index, width in enumerate(widths, start=1)
+    )
+    worksheet = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" '
+        'activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+        f'<cols>{xml_columns}</cols><sheetData>{"".join(xml_rows)}</sheetData>'
+        f'<autoFilter ref="A1:{column_letter(len(headers))}{len(rows)}"/></worksheet>'
+    )
+    workbook_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        '<sheets><sheet name="Assessment records" sheetId="1" r:id="rId1"/></sheets></workbook>'
+    )
+    styles = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        '<numFmts count="1"><numFmt numFmtId="164" formatCode="0.0%"/></numFmts>'
+        '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font>'
+        '<font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts>'
+        '<fills count="3"><fill><patternFill patternType="none"/></fill>'
+        '<fill><patternFill patternType="gray125"/></fill>'
+        '<fill><patternFill patternType="solid"><fgColor rgb="FF087C70"/>'
+        '<bgColor indexed="64"/></patternFill></fill></fills>'
+        '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+        '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+        '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+        '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>'
+        '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>'
+        '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'
+    )
+    output = BytesIO()
+    with ZipFile(output, "w", ZIP_DEFLATED) as workbook:
+        workbook.writestr(
+            "[Content_Types].xml",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+            '</Types>',
+        )
+        workbook.writestr(
+            "_rels/.rels",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+            '</Relationships>',
+        )
+        workbook.writestr("xl/workbook.xml", workbook_xml)
+        workbook.writestr(
+            "xl/_rels/workbook.xml.rels",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+            '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+            '</Relationships>',
+        )
+        workbook.writestr("xl/worksheets/sheet1.xml", worksheet)
+        workbook.writestr("xl/styles.xml", styles)
+
+    return Response(
+        content=output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="clinic-assessments-{staff_role or "all-staff"}.xlsx"'
+        },
+    )
 
 
 @router.get("/patients/unsynced")
